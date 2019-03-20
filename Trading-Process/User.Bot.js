@@ -1,4 +1,4 @@
-exports.newUserBot = function newUserBot (bot, logger) {
+exports.newUserBot = function newUserBot(bot, logger) {
   /*
     Creating a new instance from the platform of this bot:
     - bot: An instance of the bot configuration
@@ -41,6 +41,8 @@ exports.newUserBot = function newUserBot (bot, logger) {
   */
   let simulatorStorage
 
+  let timePeriod, dataSet
+
   /*
     This objects returns two public functions that will be used to integrate
     with the platform.
@@ -58,7 +60,7 @@ exports.newUserBot = function newUserBot (bot, logger) {
         from the platform. At the moment it is not used but in future releases
         it will allow to create different clones of the Algobot, to form an Algonet.
   */
-  function initialize (pAssistant, pGenes, callBackFunction) {
+  function initialize(pAssistant, pGenes, callBackFunction) {
     try {
       if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] initialize -> Entering function.') }
 
@@ -85,6 +87,17 @@ exports.newUserBot = function newUserBot (bot, logger) {
       let key = bot.devTeam + '-simulator-' + bot.codeName + '-Trading-Simulation-Multi-Period-Market-dataSet.V1'
       simulatorStorage = assistant.dataDependencies.dataSets.get(key)
 
+      let executionParameters = JSON.parse(process.env.EXECUTION_PARAMETERS)
+      timePeriod = executionParameters.timePeriod
+      if (timePeriod === undefined) {
+        throw new Error("Execution Parameter Time Period not defined.")
+      }
+
+      dataSet = executionParameters.dataSet
+      if (dataSet === undefined) {
+        throw new Error("Execution Parameter Data Set not defined.")
+      }
+
       /*
         Once Completed we must return the global.DEFAULT_OK_RESPONSE
       */
@@ -99,7 +112,7 @@ exports.newUserBot = function newUserBot (bot, logger) {
   /*
     The start function is called by the platform for executing the bot every 1 minute
   */
-  function start (callBackFunction) {
+  function start(callBackFunction) {
     if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Entering function.') }
 
     /*
@@ -116,7 +129,7 @@ exports.newUserBot = function newUserBot (bot, logger) {
           global.DEFAULT_FAIL_RESPONSE: Finish in failure state
             (this allows us to check the logs and fix execution errors when they occur)
     */
-    function onDone (err) {
+    function onDone(err) {
       try {
         switch (err.result) {
           case global.DEFAULT_OK_RESPONSE.result: {
@@ -147,24 +160,30 @@ exports.newUserBot = function newUserBot (bot, logger) {
       Here is a detailed explanation of the bot:
         https://github.com/AAVikings/AAArtudito-Trading-Bot/blob/master/README.md
     */
-    function businessLogic (callBack) {
+    function businessLogic(callBack) {
       if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> Entering function.') }
 
       // Simulation for forcing buy or sell on each execution without checking the rules
       let forceBuyAndSell = false
-      if(forceBuyAndSell){
-        if (Math.random(1) <= 0.5){
+      if (forceBuyAndSell) {
+        if (Math.random(1) <= 0.5) {
           createBuyPosition(callBack);
-        }else{
+        } else {
           createSellPosition(callBack);
         }
-      }else{
+      } else {
         getIndicatorSignal(indicatorSignal);
       }
 
-      function indicatorSignal (err, indicatorRecord) {
+      function indicatorSignal(err, indicatorRecord) {
         try {
+
           if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> indicatorSignal  -> Entering Function.') }
+
+          if (indicatorRecord === undefined) {
+            if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] start -> businessLogic -> indicatorSignal -> Nothing to do, there isn't a buy or sell opportunity.") }
+            callBack(global.DEFAULT_OK_RESPONSE)
+          }
 
           if (err.result !== global.DEFAULT_OK_RESPONSE.result) {
             logger.write(MODULE_NAME, '[ERROR] start -> businessLogic -> indicatorSignal -> err = ' + err.message)
@@ -175,10 +194,10 @@ exports.newUserBot = function newUserBot (bot, logger) {
             let assetBBalance = assistant.getAvailableBalance().assetB
             if (indicatorRecord.type === "Sell") {
               createSellPosition(callBack)
-            } else if(assetBBalance > 0){
+            } else if (assetBBalance > 0) {
               //Stop loss configuration
               let closeTrade = checkToCloseTradeWithStopLoss()
-              if(closeTrade){
+              if (closeTrade) {
                 createBuyPosition(callBack)
               } else {
                 createBuyPosition(callBack, indicatorRecord.buyOrder)
@@ -195,10 +214,10 @@ exports.newUserBot = function newUserBot (bot, logger) {
       }
     }
 
-    function getIndicatorFile (timePeriod, callback) {
+    function getIndicatorFile(callback) {
       if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> getIndicatorFile -> Entering function.') }
 
-      let filePath = 'Trading-Simulation/Multi-Period-Market/' + timePeriod
+      let filePath = 'Trading-Simulation/' + dataSet + '/' + timePeriod
       let fileName = 'USDT_BTC.json'
 
       /*
@@ -215,7 +234,7 @@ exports.newUserBot = function newUserBot (bot, logger) {
         simulatorStorage.getTextFile(filePath, fileName, onFileReceived)
       }
 
-      function onFileReceived (err, text) {
+      function onFileReceived(err, text) {
         if (err.result === global.DEFAULT_OK_RESPONSE.result) {
           if (FULL_LOG === true) { logger.write(MODULE_NAME, '[INFO] start -> getIndicatorFile -> onFileReceived > Entering Function.') }
 
@@ -229,14 +248,13 @@ exports.newUserBot = function newUserBot (bot, logger) {
       }
     }
 
-    function getIndicatorSignal (callBack) {
+    function getIndicatorSignal(callBack) {
       if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> getIndicatorSignal -> Entering function.') }
 
       let indicatorRecord
-      let timePeriod = "01-hs"
-      getIndicatorFile(timePeriod, onIndicatorFileReceived)
+      getIndicatorFile(onIndicatorFileReceived)
 
-      function onIndicatorFileReceived (err, indicatorFile) {
+      function onIndicatorFileReceived(err, indicatorFile) {
 
         if (err.result !== global.DEFAULT_OK_RESPONSE.result) {
           callBack(err)
@@ -252,31 +270,31 @@ exports.newUserBot = function newUserBot (bot, logger) {
             for (let i = 0; i < indicatorFile.length; i++) {
               if (bot.processDatetime.valueOf() >= indicatorFile[i][0] && bot.processDatetime.valueOf() < indicatorFile[i][1]) {
                 indicatorRecord = {
-                    begin: indicatorFile[i][0],
-                    end: indicatorFile[i][1],
-                    type: indicatorFile[i][2],
-                    rate: indicatorFile[i][3],
-                    amount: indicatorFile[i][4],
-                    balanceA: indicatorFile[i][5],
-                    balanceB: indicatorFile[i][6],
-                    profit: indicatorFile[i][7],
-                    lastProfit: indicatorFile[i][8],
-                    stopLoss: indicatorFile[i][9],
-                    roundtrips: indicatorFile[i][10],
-                    hits: indicatorFile[i][11],
-                    fails: indicatorFile[i][12],
-                    hitRatio: indicatorFile[i][13],
-                    ROI: indicatorFile[i][14],
-                    periods: indicatorFile[i][15],
-                    days: indicatorFile[i][16],
-                    anualizedRateOfReturn: indicatorFile[i][17],
-                    sellRate: indicatorFile[i][18],
-                    lastProfitPercent: indicatorFile[i][19],
-                    strategy: indicatorFile[i][20],
-                    strategyPhase: indicatorFile[i][21],
-                    buyOrder: indicatorFile[i][22],
-                    stopLossPhase: indicatorFile[i][23],
-                    buyOrderPhase: indicatorFile[i][24]
+                  begin: indicatorFile[i][0],
+                  end: indicatorFile[i][1],
+                  type: indicatorFile[i][2],
+                  rate: indicatorFile[i][3],
+                  amount: indicatorFile[i][4],
+                  balanceA: indicatorFile[i][5],
+                  balanceB: indicatorFile[i][6],
+                  profit: indicatorFile[i][7],
+                  lastProfit: indicatorFile[i][8],
+                  stopLoss: indicatorFile[i][9],
+                  roundtrips: indicatorFile[i][10],
+                  hits: indicatorFile[i][11],
+                  fails: indicatorFile[i][12],
+                  hitRatio: indicatorFile[i][13],
+                  ROI: indicatorFile[i][14],
+                  periods: indicatorFile[i][15],
+                  days: indicatorFile[i][16],
+                  anualizedRateOfReturn: indicatorFile[i][17],
+                  sellRate: indicatorFile[i][18],
+                  lastProfitPercent: indicatorFile[i][19],
+                  strategy: indicatorFile[i][20],
+                  strategyPhase: indicatorFile[i][21],
+                  buyOrder: indicatorFile[i][22],
+                  stopLossPhase: indicatorFile[i][23],
+                  buyOrderPhase: indicatorFile[i][24]
                 }
 
                 callBack(global.DEFAULT_OK_RESPONSE, indicatorRecord)
@@ -335,109 +353,109 @@ exports.newUserBot = function newUserBot (bot, logger) {
       }
     }
 
-    function createBuyPosition (callBack, currentRate) {
+    function createBuyPosition(callBack, currentRate) {
       try {
-          if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createBuyPosition -> Entering function.') }
+        if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createBuyPosition -> Entering function.') }
 
-          // We get the current positions we have at the exchange
-          let positions = assistant.getPositions()
-          if(!currentRate){
-            currentRate = assistant.getTicker().ask
-          }
-          let amountA = assistant.getAvailableBalance().assetA
-          let amountB = Number((amountA / currentRate).toFixed(8))
-
-          if (positions.length > 0 && positions[0].type === 'buy' && positions[0].status !== 'executed') {
-            if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createBuyPosition -> Moving an existing BUY position to a new price: $' + Number(currentRate).toLocaleString()) }
-
-            let message = 'Moving an existing buy position to a new price: $' + Number(currentRate).toLocaleString()
-            message += '. Combined ROI on current execution: ' + getCombinedProfit() + '%. '
-            assistant.sendMessage(6, 'Moving Position', message)
-            message = bot.processDatetime.toISOString() + ' - ' + message
-            assistant.movePosition(positions[0], currentRate, callBack)
-          } else if (amountA > 0) {
-            if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createBuyPosition -> bumblebee put a new BUY position at price: $' + Number(currentRate).toLocaleString()) }
-
-            let message = 'Creating a new buy position. Price: $' + Number(currentRate).toLocaleString()
-            message += '. Combined ROI on current execution: ' + getCombinedProfit() + '%. '
-            assistant.sendMessage(7, 'Buying', message)
-            message = bot.processDatetime.toISOString() + ' - ' + message
-            assistant.putPosition('buy', currentRate, amountA, amountB, callBack)
-          } else {
-            if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createBuyPosition -> Not enough available balance to buy.') }
-
-            callBack(global.DEFAULT_OK_RESPONSE)
-          }
-        } catch (err) {
-          logger.write(MODULE_NAME, '[ERROR] start -> businessLogic -> createBuyPosition -> err = ' + err.message)
-          callBackFunction(global.DEFAULT_FAIL_RESPONSE)
+        // We get the current positions we have at the exchange
+        let positions = assistant.getPositions()
+        if (!currentRate) {
+          currentRate = assistant.getTicker().ask
         }
+        let amountA = assistant.getAvailableBalance().assetA
+        let amountB = Number((amountA / currentRate).toFixed(8))
+
+        if (positions.length > 0 && positions[0].type === 'buy' && positions[0].status !== 'executed') {
+          if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createBuyPosition -> Moving an existing BUY position to a new price: $' + Number(currentRate).toLocaleString()) }
+
+          let message = 'Moving an existing buy position to a new price: $' + Number(currentRate).toLocaleString()
+          message += '. Combined ROI on current execution: ' + getCombinedProfit() + '%. '
+          assistant.sendMessage(6, 'Moving Position', message)
+          message = bot.processDatetime.toISOString() + ' - ' + message
+          assistant.movePosition(positions[0], currentRate, callBack)
+        } else if (amountA > 0) {
+          if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createBuyPosition -> bumblebee put a new BUY position at price: $' + Number(currentRate).toLocaleString()) }
+
+          let message = 'Creating a new buy position. Price: $' + Number(currentRate).toLocaleString()
+          message += '. Combined ROI on current execution: ' + getCombinedProfit() + '%. '
+          assistant.sendMessage(7, 'Buying', message)
+          message = bot.processDatetime.toISOString() + ' - ' + message
+          assistant.putPosition('buy', currentRate, amountA, amountB, callBack)
+        } else {
+          if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createBuyPosition -> Not enough available balance to buy.') }
+
+          callBack(global.DEFAULT_OK_RESPONSE)
+        }
+      } catch (err) {
+        logger.write(MODULE_NAME, '[ERROR] start -> businessLogic -> createBuyPosition -> err = ' + err.message)
+        callBackFunction(global.DEFAULT_FAIL_RESPONSE)
+      }
     }
 
-    function createSellPosition (callBack) {
-      try{
-          if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createSellPosition -> Entering function.') }
+    function createSellPosition(callBack) {
+      try {
+        if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createSellPosition -> Entering function.') }
 
-          // We get the current positions we have at the exchange
-          let positions = assistant.getPositions()
-          let assetBBalance = assistant.getAvailableBalance().assetB
-          let currentRate = assistant.getTicker().bid
-          let amountB = assistant.getAvailableBalance().assetB
-          let amountA = amountB * currentRate
+        // We get the current positions we have at the exchange
+        let positions = assistant.getPositions()
+        let assetBBalance = assistant.getAvailableBalance().assetB
+        let currentRate = assistant.getTicker().bid
+        let amountB = assistant.getAvailableBalance().assetB
+        let amountA = amountB * currentRate
 
-          if (positions.length > 0 && positions[0].type === 'sell' && positions[0].status !== 'executed') {
-            if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createSellPosition -> bumblebee is moving an existing SELL position to a new price: $' + Number(currentRate).toLocaleString()) }
+        if (positions.length > 0 && positions[0].type === 'sell' && positions[0].status !== 'executed') {
+          if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createSellPosition -> bumblebee is moving an existing SELL position to a new price: $' + Number(currentRate).toLocaleString()) }
 
-            let message = 'Moving an existing sell position to a new price: $' + Number(currentRate).toLocaleString()
-            message += '. Combined ROI on current execution: ' + getCombinedProfit() + '%. '
-            assistant.sendMessage(6, 'Moving Position', message)
-            message = bot.processDatetime.toISOString() + ' - ' + message
-            assistant.movePosition(positions[0], currentRate, callBack)
-          } else if (assetBBalance > 0) {
-            if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createSellPosition -> bumblebee put a new SELL position at price: $' + Number(currentRate).toLocaleString()) }
+          let message = 'Moving an existing sell position to a new price: $' + Number(currentRate).toLocaleString()
+          message += '. Combined ROI on current execution: ' + getCombinedProfit() + '%. '
+          assistant.sendMessage(6, 'Moving Position', message)
+          message = bot.processDatetime.toISOString() + ' - ' + message
+          assistant.movePosition(positions[0], currentRate, callBack)
+        } else if (assetBBalance > 0) {
+          if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createSellPosition -> bumblebee put a new SELL position at price: $' + Number(currentRate).toLocaleString()) }
 
-            let message = 'Creating a new sell position. Price: $' + Number(currentRate).toLocaleString()
-            message += '. Combined ROI on current execution: ' + getCombinedProfit() + '%. '
-            assistant.sendMessage(7, 'Selling', message)
-            message = bot.processDatetime.toISOString() + ' - ' + message
-            assistant.putPosition('sell', currentRate, amountA, amountB, callBack)
-          } else {
-            if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createSellPosition -> There is not enough available balance to sell.') }
+          let message = 'Creating a new sell position. Price: $' + Number(currentRate).toLocaleString()
+          message += '. Combined ROI on current execution: ' + getCombinedProfit() + '%. '
+          assistant.sendMessage(7, 'Selling', message)
+          message = bot.processDatetime.toISOString() + ' - ' + message
+          assistant.putPosition('sell', currentRate, amountA, amountB, callBack)
+        } else {
+          if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> businessLogic -> createSellPosition -> There is not enough available balance to sell.') }
 
-            callBack(global.DEFAULT_OK_RESPONSE)
-          }
-        } catch (err) {
-          logger.write(MODULE_NAME, '[ERROR] start -> businessLogic -> createBuyPosition -> err = ' + err.message)
-          callBackFunction(global.DEFAULT_FAIL_RESPONSE)
+          callBack(global.DEFAULT_OK_RESPONSE)
         }
+      } catch (err) {
+        logger.write(MODULE_NAME, '[ERROR] start -> businessLogic -> createBuyPosition -> err = ' + err.message)
+        callBackFunction(global.DEFAULT_FAIL_RESPONSE)
+      }
     }
 
-    function checkToCloseTradeWithStopLoss (stopLossValue) {
+    function checkToCloseTradeWithStopLoss(stopLossValue) {
       let assetABalance = assistant.getAvailableBalance().assetA
       let currentRate = assistant.getMarketRate()
 
-      if(assetABalance > 0 && currentRate >= stopLossValue){
+      if (assetABalance > 0 && currentRate >= stopLossValue) {
         if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> checkToCloseTradeWithStopLoss -> Closing trade with Stop Loss.') }
 
         return true
-      } else{
+      } else {
         return false
       }
     }
 
-    function isExecutionToday () {
+    function isExecutionToday() {
       let localDate = new Date()
       let today = new Date(Date.UTC(
-                localDate.getUTCFullYear(),
-                localDate.getUTCMonth(),
-                localDate.getUTCDate()))
+        localDate.getUTCFullYear(),
+        localDate.getUTCMonth(),
+        localDate.getUTCDate()))
 
       return (today.getUTCFullYear() === bot.processDatetime.getUTCFullYear()
-                && today.getUTCMonth() === bot.processDatetime.getUTCMonth()
-                && today.getUTCDate() === bot.processDatetime.getUTCDate())
+        && today.getUTCMonth() === bot.processDatetime.getUTCMonth()
+        && today.getUTCDate() === bot.processDatetime.getUTCDate())
     }
 
-    function getCombinedProfit () {
+    function getCombinedProfit() {
       if (assistant.getCombinedProfits() !== undefined) {
         if (assistant.getCombinedProfits().assetA > 0) {
           return Number(assistant.getCombinedProfits().assetA).toLocaleString()
