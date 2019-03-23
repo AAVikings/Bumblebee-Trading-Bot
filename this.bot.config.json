@@ -36,7 +36,7 @@
             "retryWaitTime": 10000,
             "sleepWaitTime": 3600000,
             "comaWaitTime": 86400000,
-            "timePeriod": 1800000,
+            "timePeriod": 3600000,
             "statusDependencies": [
                 {
                     "devTeam": "AAMasters",
@@ -92,8 +92,7 @@
             "codeName": "Live Trading History",
             "displayName": "Live Trading History",
             "shortDisplayName": "Live",
-            "description": "General information about Bumblebee trading history.",
-            "storageAccount": "bumblebee",
+            "description": "General information about trading history.",
             "dataSets": [
                 {
                     "codeName": "Oficial History",
@@ -118,8 +117,7 @@
             "codeName": "Backtest Trading History",
             "displayName": "Backtest Trading History",
             "shortDisplayName": "Backtest",
-            "description": "General information about Bumblebee backtest trading history.",
-            "storageAccount": "bumblebee",
+            "description": "General information about backtest trading history.",
             "dataSets": [
                 {
                     "codeName": "Backtest History",
@@ -144,8 +142,7 @@
             "codeName": "Competition Trading History",
             "displayName": "Competition Trading History",
             "shortDisplayName": "Competition",
-            "description": "General information about bumblebee competition trading history.",
-            "storageAccount": "bumblebee",
+            "description": "General information about competition trading history.",
             "dataSets": [
                 {
                     "codeName": "Competition History",
