@@ -71,59 +71,16 @@ exports.newUserBot = function newUserBot(bot, logger) {
       if (assetABalance > 0 && currentRate >= indicatorRecord.stopLoss) {
         if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] manageTradeStopLoss -> Closing trade with Stop Loss.') }
         await createBuyPosition(currentRate)
-        callBackFunction(global.DEFAULT_OK_RESPONSE)
         console.log("----------- Stop Loss Executed -----------")
-        return
+        return global.DEFAULT_OK_RESPONSE
       }
 
-      // If there is any signal not yet approved we update with the new indicator value
-      let signals = await getSignalsByCloneId("SIGNALED")
-      if (signals !== undefined && signals.length > 0) {
-        for (let inProcessSignal of signals) {
-          await updateSignal(inProcessSignal.id, "SIGNALED", "Updating with the information from the market.", indicatorRecord)
-        }
-        console.log("----------- updateSignal  Executed -----------")
-        callBackFunction(global.DEFAULT_OK_RESPONSE)
-        return
-      }
+      let isCloneInAutopilot = false
 
-      // If there is an accepted signal we will proceed to execute it on the market
-      let acceptedSignals = await getSignalsByCloneId("ACCEPTED")
-      if (acceptedSignals !== undefined && acceptedSignals.length > 0) {
-        for (let acceptedSignal of acceptedSignals) {
-          let marketOrderResult = await createSellPosition(acceptedSignal.orderData)
-          if (!marketOrderResult.error) {
-            await updateSignal(acceptedSignal.id, "IN_PROCESS", "Order was placed in the market.", acceptedSignal.orderData)
-          } else {
-            await updateSignal(acceptedSignal.id, "FAILED", "Failed to put the order on the exchange: " + marketOrderResult.error, acceptedSignal.orderData)
-          }
-        }
-        console.log("----------- createSellPosition Executed -----------")
-        callBackFunction(global.DEFAULT_OK_RESPONSE)
-        return
-      }
-
-      // If there is an in process signal we will proceed to execute it on the market
-      let inProcessSignals = await getSignalsByCloneId("IN_PROCESS")
-      if (inProcessSignals !== undefined && inProcessSignals.length > 0) {
-        for (let inProcessSignal of inProcessSignals) {
-          if (checkSignalCompletion()) {
-            await updateSignal(inProcessSignal.id, "PROCESSED", "The order was executed on the market.", inProcessSignal.orderData)
-          }
-        }
-        console.log("----------- signalCompleted Executed -----------")
-        callBackFunction(global.DEFAULT_OK_RESPONSE)
-        return
-      }
-
-      // Finally we check if it's needed to create a new signal
-      let context = indicatorFileContent[0]
-      if (indicatorRecord.type === "Sell") {
-        if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] createNewSignal -> SELLING') }
-        await createSignal(context, indicatorRecord)
-        console.log("----------- createSignal Executed -----------")
+      if (isCloneInAutopilot) {
+        await manageCloneInAutopilotOn()
       } else {
-        if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] createNewSignal -> Nothing to do, there isn't a buy or sell opportunity.") }
+        await manageCloneInAutopilotOff()
       }
 
       callBackFunction(global.DEFAULT_OK_RESPONSE)
@@ -132,6 +89,74 @@ exports.newUserBot = function newUserBot(bot, logger) {
       logger.write(MODULE_NAME, '[ERROR] start -> error = ' + error.message)
       callBackFunction(global.DEFAULT_FAIL_RESPONSE)
     }
+  }
+
+  async function manageCloneInAutopilotOff() {
+    let assetBBalance = assistant.getAvailableBalance().assetB
+    if (indicatorRecord.type === "Sell") {
+      await createSellPosition(indicatorRecord)
+    } else if (assetBBalance > 0) {
+      await createBuyPosition(indicatorRecord.buyOrder)
+    } else {
+      if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] start -> businessLogic -> indicatorSignal -> Nothing to do, there isn't a buy or sell opportunity.") }
+    }
+  }
+
+  async function manageCloneInAutopilotOn() {
+    // If there is any signal not yet approved we update with the new indicator value
+    let signals = await getSignalsByCloneId("SIGNALED")
+    if (signals !== undefined && signals.length > 0) {
+      for (let inProcessSignal of signals) {
+        let cockpitData = createCockpitData(indicatorRecord)
+        await updateSignal(inProcessSignal.id, "SIGNALED", "Updating with the information from the market.", cockpitData)
+      }
+      console.log("----------- updateSignal  Executed -----------")
+      return global.DEFAULT_OK_RESPONSE
+    }
+
+    // If there is an accepted signal we will proceed to execute it on the market
+    let acceptedSignals = await getSignalsByCloneId("ACCEPTED")
+    if (acceptedSignals !== undefined && acceptedSignals.length > 0) {
+      for (let acceptedSignal of acceptedSignals) {
+        let marketOrderResult = await createSellPosition(acceptedSignal.orderData)
+        if (!marketOrderResult.error) {
+          await updateSignal(acceptedSignal.id, "IN_PROCESS", "Order was placed in the market.", acceptedSignal.orderData)
+        } else {
+          await updateSignal(acceptedSignal.id, "FAILED", "Failed to put the order on the exchange: " + marketOrderResult.error, acceptedSignal.orderData)
+        }
+      }
+      console.log("----------- createSellPosition Executed -----------")
+      return global.DEFAULT_OK_RESPONSE
+    }
+
+    // If there is an in process signal we will proceed to execute it on the market
+    let inProcessSignals = await getSignalsByCloneId("IN_PROCESS")
+    if (inProcessSignals !== undefined && inProcessSignals.length > 0) {
+      for (let inProcessSignal of inProcessSignals) {
+        if (checkSignalCompletion()) {
+          await updateSignal(inProcessSignal.id, "PROCESSED", "The order was executed on the market.", inProcessSignal.orderData)
+        }
+      }
+      console.log("----------- signalCompleted Executed -----------")
+      return global.DEFAULT_OK_RESPONSE
+    }
+
+    // Finally we check if it's needed to create a new signal
+    if (indicatorRecord.type === "Sell") {
+      if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] createNewSignal -> SELLING') }
+
+      let context = createContextData(indicatorRecord)
+      let cockpitData = createCockpitData(indicatorRecord, assistant.getAvailableBalance().assetB)
+      await createSignal(context, cockpitData)
+      console.log("----------- createSignal Executed -----------")
+      return global.DEFAULT_OK_RESPONSE
+    } else {
+      if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] createNewSignal -> Nothing to do, there isn't a buy or sell opportunity.") }
+      return global.DEFAULT_OK_RESPONSE
+    }
+
+    if (LOG_INFO === true) { logger.write(MODULE_NAME, "[WARN] manageSignals -> Any condition was reached while cockpit interation is enabled.") }
+    return global.DEFAULT_OK_RESPONSE
   }
 
   function createBuyPosition(currentRate) {
@@ -464,6 +489,30 @@ exports.newUserBot = function newUserBot(bot, logger) {
         })
       }
     )
+  }
+
+  function createCockpitData(indicatorRecord, amount) {
+    let cockpitData = {
+      dateTime: new Date(indicatorRecord.begin),
+      rate: indicatorRecord.rate,
+      stopLoss: indicatorRecord.stopLoss,
+      buyOrder: indicatorRecord.buyOrder
+    }
+
+    if (amount) {
+      cockpitData.type = indicatorRecord.type,
+        cockpitData.amount = amount
+    }
+
+    return cockpitData
+  }
+
+  function createContextData(indicatorRecord) {
+    let contextData = {
+      strategyUsed: indicatorRecord.strategy
+    }
+
+    return contextData
   }
 
 }
