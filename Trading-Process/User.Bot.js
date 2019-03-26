@@ -1,4 +1,4 @@
-exports.newUserBot = function newUserBot(bot, logger) {
+exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
 
   // Variable used for logs, which will be passed to the logger instance
   const MODULE_NAME = 'User Bot'
@@ -50,68 +50,78 @@ exports.newUserBot = function newUserBot(bot, logger) {
     The start function is called by the platform for executing the bot every 1 minute
   */
   async function start(callBackFunction) {
-    try {
-      if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Entering function.') }
+    if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Entering function.') }
 
-      let indicatorFileContent = await getIndicatorFile()
-      let indicatorRecord = getIndicatorRecordFromFile(indicatorFileContent)
+    let indicatorFileContent = await getIndicatorFile()
+    let indicatorRecord = getIndicatorRecordFromFile(indicatorFileContent)
+    let autopilotResponse = await getAutopilot()
 
-      if (indicatorRecord === undefined) {
-        if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Indicator record not found.') }
-        callBackFunction(global.DEFAULT_OK_RESPONSE)
-        return
-      }
+    if (indicatorRecord === undefined) {
+      if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Indicator record not found.') }
 
-      if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Processing indicator record:' + JSON.stringify(indicatorRecord)) }
+      let plotterData = createPlotterData("NoIndicator", "NO_SIGNAL", autopilotResponse.autopilot, 0, 0, 0)
+      assistant.addExtraData(plotterData)
 
-      // Checking Stop Loss
-      let assetABalance = assistant.getAvailableBalance().assetA
-      let currentRate = assistant.getMarketRate()
+      return callBackFunction(global.DEFAULT_OK_RESPONSE)
+    }
 
-      if (assetABalance > 0 && currentRate >= indicatorRecord.stopLoss) {
-        if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] manageTradeStopLoss -> Closing trade with Stop Loss.') }
-        await createBuyPosition(currentRate)
-        console.log("----------- Stop Loss Executed -----------")
-        return global.DEFAULT_OK_RESPONSE
-      }
+    if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Processing indicator record:' + JSON.stringify(indicatorRecord)) }
 
-      let isCloneInAutopilot = false
+    // Checking Stop Loss
+    let assetABalance = assistant.getAvailableBalance().assetA
+    let currentRate = assistant.getMarketRate()
 
-      if (isCloneInAutopilot) {
-        await manageCloneInAutopilotOn()
-      } else {
-        await manageCloneInAutopilotOff()
-      }
+    if (assetABalance > 0 && currentRate >= indicatorRecord.stopLoss) {
+      if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] manageTradeStopLoss -> Closing trade with Stop Loss.') }
+      await createBuyPosition(currentRate)
 
-      callBackFunction(global.DEFAULT_OK_RESPONSE)
+      let plotterData = createPlotterData("StopLoss", "NO_SIGNAL", autopilotResponse.autopilot, assetABalance, currentRate, 0)
+      assistant.addExtraData(plotterData)
 
-    } catch (error) {
-      logger.write(MODULE_NAME, '[ERROR] start -> error = ' + error.message)
-      callBackFunction(global.DEFAULT_FAIL_RESPONSE)
+      return callBackFunction(global.DEFAULT_OK_RESPONSE)
+    }
+
+    if (autopilotResponse.autopilot) {
+      await manageCloneInAutopilotOn(callBackFunction)
+    } else {
+      await manageCloneInAutopilotOff(callBackFunction)
     }
   }
 
-  async function manageCloneInAutopilotOff() {
+  async function manageCloneInAutopilotOn(callBackFunction) {
+    let assetABalance = assistant.getAvailableBalance().assetA
     let assetBBalance = assistant.getAvailableBalance().assetB
     if (indicatorRecord.type === "Sell") {
       await createSellPosition(indicatorRecord)
+
+      let plotterData = createPlotterData("Sell", "NO_SIGNAL", true, assetABalance, 0, 0)
+      assistant.addExtraData(plotterData)
+      return callBackFunction(global.DEFAULT_OK_RESPONSE)
     } else if (assetBBalance > 0) {
       await createBuyPosition(indicatorRecord.buyOrder)
+
+      let plotterData = createPlotterData("Buy", "NO_SIGNAL", true, assetBBalance, 0, 0)
+      assistant.addExtraData(plotterData)
+      return callBackFunction(global.DEFAULT_OK_RESPONSE)
     } else {
       if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] start -> businessLogic -> indicatorSignal -> Nothing to do, there isn't a buy or sell opportunity.") }
     }
   }
 
-  async function manageCloneInAutopilotOn() {
+  async function manageCloneInAutopilotOff(callBackFunction) {
     // If there is any signal not yet approved we update with the new indicator value
+    let assetABalance = assistant.getAvailableBalance().assetA
+    let autopilot = false
     let signals = await getSignalsByCloneId("SIGNALED")
     if (signals !== undefined && signals.length > 0) {
       for (let inProcessSignal of signals) {
         let cockpitData = createCockpitData(indicatorRecord)
         await updateSignal(inProcessSignal.id, "SIGNALED", "Updating with the information from the market.", cockpitData)
+
+        let plotterData = createPlotterData("Sell", "SIGNALED", autopilot, assetABalance, cockpitData.stopLoss, cockpitData.buyOrder)
+        assistant.addExtraData(plotterData)
       }
-      console.log("----------- updateSignal  Executed -----------")
-      return global.DEFAULT_OK_RESPONSE
+      return callBackFunction(global.DEFAULT_OK_RESPONSE)
     }
 
     // If there is an accepted signal we will proceed to execute it on the market
@@ -121,12 +131,18 @@ exports.newUserBot = function newUserBot(bot, logger) {
         let marketOrderResult = await createSellPosition(acceptedSignal.orderData)
         if (!marketOrderResult.error) {
           await updateSignal(acceptedSignal.id, "IN_PROCESS", "Order was placed in the market.", acceptedSignal.orderData)
+
+          let plotterData = createPlotterData("Sell", "IN_PROCESS", autopilot, acceptedSignal.orderData.amount, acceptedSignal.orderData.stopLoss, acceptedSignal.orderData.buyOrder)
+          assistant.addExtraData(plotterData)
         } else {
           await updateSignal(acceptedSignal.id, "FAILED", "Failed to put the order on the exchange: " + marketOrderResult.error, acceptedSignal.orderData)
+
+          let plotterData = createPlotterData("Sell", "FAILED", autopilot, acceptedSignal.orderData.amount, acceptedSignal.orderData.stopLoss, acceptedSignal.orderData.buyOrder)
+          assistant.addExtraData(plotterData)
         }
       }
-      console.log("----------- createSellPosition Executed -----------")
-      return global.DEFAULT_OK_RESPONSE
+
+      return callBackFunction(global.DEFAULT_OK_RESPONSE)
     }
 
     // If there is an in process signal we will proceed to execute it on the market
@@ -135,28 +151,34 @@ exports.newUserBot = function newUserBot(bot, logger) {
       for (let inProcessSignal of inProcessSignals) {
         if (checkSignalCompletion()) {
           await updateSignal(inProcessSignal.id, "PROCESSED", "The order was executed on the market.", inProcessSignal.orderData)
+
+          let plotterData = createPlotterData("Sell", "PROCESSED", autopilot, inProcessSignal.orderData.amount, inProcessSignal.orderData.stopLoss, inProcessSignal.orderData.buyOrder)
+          assistant.addExtraData(plotterData)
         }
       }
-      console.log("----------- signalCompleted Executed -----------")
-      return global.DEFAULT_OK_RESPONSE
+      return callBackFunction(global.DEFAULT_OK_RESPONSE)
     }
 
     // Finally we check if it's needed to create a new signal
     if (indicatorRecord.type === "Sell") {
       if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] createNewSignal -> SELLING') }
 
+      let assetBBalance = assistant.getAvailableBalance().assetB
       let context = createContextData(indicatorRecord)
-      let cockpitData = createCockpitData(indicatorRecord, assistant.getAvailableBalance().assetB)
+      let cockpitData = createCockpitData(indicatorRecord, assetBBalance)
       await createSignal(context, cockpitData)
-      console.log("----------- createSignal Executed -----------")
-      return global.DEFAULT_OK_RESPONSE
+
+      let plotterData = createPlotterData("Sell", "SIGNALED", autopilot, assetBBalance, cockpitData.stopLoss, cockpitData.buyOrder)
+      assistant.addExtraData(plotterData)
+
+      return callBackFunction(global.DEFAULT_OK_RESPONSE)
     } else {
       if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] createNewSignal -> Nothing to do, there isn't a buy or sell opportunity.") }
-      return global.DEFAULT_OK_RESPONSE
+      return
     }
 
     if (LOG_INFO === true) { logger.write(MODULE_NAME, "[WARN] manageSignals -> Any condition was reached while cockpit interation is enabled.") }
-    return global.DEFAULT_OK_RESPONSE
+    return callBackFunction(global.DEFAULT_OK_RESPONSE)
   }
 
   function createBuyPosition(currentRate) {
@@ -243,7 +265,8 @@ exports.newUserBot = function newUserBot(bot, logger) {
       if (FULL_LOG === true) { logger.write(MODULE_NAME, '[INFO] getIndicatorFile -> Getting the file from local cache.') }
       return bot.botCache.get(filePath)
     } else {
-      let indicatorFileContent = await getFileContent(filePath, 'USDT_BTC.json')
+      let response = getFileContent(filePath, 'USDT_BTC.json')
+      let indicatorFileContent = await response
       bot.botCache.set(filePath, JSON.parse(indicatorFileContent))
       return indicatorFileContent
     }
@@ -349,6 +372,7 @@ exports.newUserBot = function newUserBot(bot, logger) {
       && today.getUTCDate() === bot.processDatetime.getUTCDate())
   }
 
+  // Modules queries
   async function getSignalsByCloneId(state) {
     try {
       const cockPit = await axios({
@@ -378,11 +402,12 @@ exports.newUserBot = function newUserBot(bot, logger) {
       if (cockPit.data.errors) {
         throw new Error(cockPit.data.errors[0].message)
       } else {
+        if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] getSignalsByCloneId -> Ok.") }
         return cockPit.data.data.cockpit_SignalsByCloneId
       }
 
     } catch (error) {
-      if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] getSignalsByCloneId error: " + error) }
+      logger.write(MODULE_NAME, "[ERROR] getSignalsByCloneId error: " + error)
       throw error
     }
   }
@@ -422,10 +447,11 @@ exports.newUserBot = function newUserBot(bot, logger) {
       if (cockPit.data.errors) {
         throw new Error(cockPit.data.errors[0].message)
       } else {
+        if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] updateSignal -> Ok.") }
         return cockPit.data.data.cockpit_UpdateSignal
       }
     } catch (error) {
-      if (LOG_INFO === true) { logger.write(MODULE_NAME, "[ERROR] updateSignal error: " + error) }
+      logger.write(MODULE_NAME, "[ERROR] updateSignal error: " + error)
       throw error
     }
   }
@@ -471,13 +497,49 @@ exports.newUserBot = function newUserBot(bot, logger) {
       }
 
     } catch (error) {
-      // throw new Error('There has been an error retrieving signals from the cockpit: ' + error)
-      if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] createSignal error: " + error) }
+      logger.write(MODULE_NAME, "[INFO] createSignal error: " + error)
       throw error
     }
   }
 
-  async function getFileContent(containerName, blobName) {
+  async function getAutopilot() {
+    try {
+      const cockPit = await axios({
+        url: process.env.GATEWAY_ENDPOINT,
+        method: 'post',
+        data: {
+          query: `
+            query($cloneId: String!){
+              cockpit_CloneSettingsByCloneId(cloneId: $cloneId){
+                id
+                cloneId
+                autopilot
+              }
+            }
+            `,
+          variables: {
+            cloneId: process.env.CLONE_ID
+          },
+        },
+        headers: {
+          authorization: 'Bearer ' + global.ACCESS_TOKEN
+        }
+      })
+
+      if (cockPit.data.errors) {
+        throw new Error(cockPit.data.errors[0].message)
+      } else {
+        if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] getAutopilot -> Ok.") }
+        return cockPit.data.data.cockpit_CloneSettingsByCloneId
+      }
+
+    } catch (error) {
+      if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] getAutopilot error: " + error) }
+      throw error
+    }
+  }
+
+  function getFileContent(containerName, blobName) {
     return new Promise(
       function (resolve, reject) {
         fileStorage.getTextFile(containerName, blobName, (result, fileContent) => {
@@ -493,7 +555,7 @@ exports.newUserBot = function newUserBot(bot, logger) {
 
   function createCockpitData(indicatorRecord, amount) {
     let cockpitData = {
-      dateTime: new Date(indicatorRecord.begin),
+      dateTime: indicatorRecord.begin,
       rate: indicatorRecord.rate,
       stopLoss: indicatorRecord.stopLoss,
       buyOrder: indicatorRecord.buyOrder
@@ -513,6 +575,19 @@ exports.newUserBot = function newUserBot(bot, logger) {
     }
 
     return contextData
+  }
+
+  function createPlotterData(positionType, signalState, autopilot, positionAmount, stopLoss, buyOrder) {
+    let plotterData = [
+      positionType,
+      signalState,
+      autopilot,
+      positionAmount,
+      stopLoss,
+      buyOrder
+    ]
+
+    return plotterData
   }
 
 }
