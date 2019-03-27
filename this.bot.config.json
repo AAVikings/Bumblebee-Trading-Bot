@@ -75,6 +75,17 @@
                 },
                 {
                     "devTeam": "AAMasters",
+                    "bot": "AAJason",
+                    "botVersion": {
+                        "major": 1,
+                        "minor": 0
+                    },
+                    "product": "Trading-Simulation",
+                    "dataSetVersion": "dataSet.V1",
+                    "dataSet": "Multi-Period-Daily"
+                },
+                {
+                    "devTeam": "AAMasters",
                     "bot": "AABruce",
                     "botVersion": {
                         "major": 1,

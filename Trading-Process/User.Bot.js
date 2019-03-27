@@ -52,39 +52,43 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   async function start(callBackFunction) {
     if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Entering function.') }
 
-    let indicatorFileContent = await getIndicatorFile()
-    let indicatorRecord = getIndicatorRecordFromFile(indicatorFileContent)
-    let autopilotResponse = await getAutopilot()
+    try {
+      let indicatorFileContent = await getIndicatorFile()
+      let indicatorRecord = getIndicatorRecordFromFile(indicatorFileContent)
+      let autopilotResponse = await getAutopilot()
 
-    if (indicatorRecord === undefined) {
-      if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Indicator record not found.') }
+      if (indicatorRecord === undefined) {
+        if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Indicator record not found.') }
 
-      let plotterData = createPlotterData("NoIndicator", "NO_SIGNAL", autopilotResponse.autopilot, 0, 0, 0)
-      assistant.addExtraData(plotterData)
+        let plotterData = createPlotterData("NoIndicator", "NO_SIGNAL", autopilotResponse.autopilot, 0, 0, 0)
+        assistant.addExtraData(plotterData)
 
-      return callBackFunction(global.DEFAULT_OK_RESPONSE)
-    }
+        return callBackFunction(global.DEFAULT_OK_RESPONSE)
+      }
 
-    if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Processing indicator record:' + JSON.stringify(indicatorRecord)) }
+      if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] start -> Processing indicator record:' + JSON.stringify(indicatorRecord)) }
 
-    // Checking Stop Loss
-    let assetABalance = assistant.getAvailableBalance().assetA
-    let currentRate = assistant.getMarketRate()
+      // Checking Stop Loss
+      let assetABalance = assistant.getAvailableBalance().assetA
+      let currentRate = assistant.getMarketRate()
 
-    if (assetABalance > 0 && currentRate >= indicatorRecord.stopLoss) {
-      if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] manageTradeStopLoss -> Closing trade with Stop Loss.') }
-      await createBuyPosition(currentRate)
+      if (assetABalance > 0 && currentRate >= indicatorRecord.stopLoss) {
+        if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] manageTradeStopLoss -> Closing trade with Stop Loss.') }
+        await createBuyPosition(currentRate)
 
-      let plotterData = createPlotterData("StopLoss", "NO_SIGNAL", autopilotResponse.autopilot, assetABalance, currentRate, 0)
-      assistant.addExtraData(plotterData)
+        let plotterData = createPlotterData("StopLoss", "NO_SIGNAL", autopilotResponse.autopilot, assetABalance, currentRate, 0)
+        assistant.addExtraData(plotterData)
 
-      return callBackFunction(global.DEFAULT_OK_RESPONSE)
-    }
+        return callBackFunction(global.DEFAULT_OK_RESPONSE)
+      }
 
-    if (autopilotResponse.autopilot) {
-      await manageCloneInAutopilotOn(callBackFunction)
-    } else {
-      await manageCloneInAutopilotOff(callBackFunction)
+      if (autopilotResponse.autopilot) {
+        await manageCloneInAutopilotOn(callBackFunction)
+      } else {
+        await manageCloneInAutopilotOff(callBackFunction)
+      }
+    } catch (error) {
+      callBackFunction(error)
     }
   }
 
@@ -174,7 +178,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
       return callBackFunction(global.DEFAULT_OK_RESPONSE)
     } else {
       if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] createNewSignal -> Nothing to do, there isn't a buy or sell opportunity.") }
-      return
+      return callBackFunction(global.DEFAULT_OK_RESPONSE)
     }
 
     if (LOG_INFO === true) { logger.write(MODULE_NAME, "[WARN] manageSignals -> Any condition was reached while cockpit interation is enabled.") }
@@ -253,7 +257,16 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   async function getIndicatorFile() {
     if (LOG_INFO === true) { logger.write(MODULE_NAME, '[INFO] getIndicatorFile -> Entering function.') }
 
-    let filePath = 'Trading-Simulation/' + bot.dataSet + '/' + bot.timePeriodFileStorage
+    let filePath
+    if (bot.processes[0].timePeriod > 2700000) {
+      // Market Files
+      filePath = 'Trading-Simulation/' + bot.dataSet + '/' + bot.timePeriodFileStorage
+    } else {
+      // Daily Files
+      let dateTime = bot.processDatetime
+      let datePath = dateTime.getUTCFullYear() + '/' + pad(dateTime.getUTCMonth() + 1, 2) + '/' + pad(dateTime.getUTCDate(), 2)
+      filePath = 'Trading-Simulation/' + bot.dataSet + '/' + bot.timePeriodFileStorage + '/' + datePath
+    }
 
     /*
       bot.botCache: allows us to keep a map (key value pairs) between executions,
@@ -402,7 +415,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
       if (cockPit.data.errors) {
         throw new Error(cockPit.data.errors[0].message)
       } else {
-        if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] getSignalsByCloneId -> Ok.") }
+        if (LOG_INFO === true) { logger.write(MODULE_NAME, "[INFO] getSignalsByCloneId -> Ok: " + state) }
         return cockPit.data.data.cockpit_SignalsByCloneId
       }
 
@@ -544,7 +557,8 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
       function (resolve, reject) {
         fileStorage.getTextFile(containerName, blobName, (result, fileContent) => {
           if (result !== global.DEFAULT_OK_RESPONSE) {
-            reject(result)
+            console.log('[WARN] getFileContent -> The indicator dependency is not ready. Will retry later.')
+            reject(global.DEFAULT_RETRY_RESPONSE)
           } else {
             resolve(fileContent)
           }
@@ -588,6 +602,11 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
     ]
 
     return plotterData
+  }
+
+  function pad(str, max) {
+    str = str.toString()
+    return str.length < max ? pad('0' + str, max) : str
   }
 
 }
