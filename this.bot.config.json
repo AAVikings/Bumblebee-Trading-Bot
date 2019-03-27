@@ -107,11 +107,11 @@
                     "name": "Poloniex"
                 }
             ],
-            "plotter": {
-                "devTeam": "AAMasters",
-                "codeName": "PlottersTrading",
-                "moduleName": "History"
-            }
+          "plotter": {
+            "devTeam": "AAMasters",
+            "codeName": "PlottersTradingSimulation",
+            "moduleName": "SimulationExecution"
+          }
         },
         {
             "codeName": "Backtest Trading History",
@@ -132,11 +132,11 @@
                     "name": "Poloniex"
                 }
             ],
-            "plotter": {
-                "devTeam": "AAMasters",
-                "codeName": "PlottersTrading",
-                "moduleName": "History"
-            }
+          "plotter": {
+            "devTeam": "AAMasters",
+            "codeName": "PlottersTradingSimulation",
+            "moduleName": "SimulationExecution"
+          }
         },
         {
             "codeName": "Competition Trading History",
@@ -157,11 +157,11 @@
                     "name": "Poloniex"
                 }
             ],
-            "plotter": {
-                "devTeam": "AAMasters",
-                "codeName": "PlottersTrading",
-                "moduleName": "History"
-            }
+          "plotter": {
+            "devTeam": "AAMasters",
+            "codeName": "PlottersTradingSimulation",
+            "moduleName": "SimulationExecution"
+          }
         }
     ]
 }
