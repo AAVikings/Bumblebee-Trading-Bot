@@ -9,3 +9,11 @@ bin/*
 *.cache
 node_modules/*
 
+
+\.env
+
+\.nyc_output/
+
+\.vscode/
+
+coverage/
