@@ -9,7 +9,7 @@
   "author": "Matias-Benitez",
   "license": "ISC",
   "dependencies": {
-    "@superalgos/mqservice": "0.0.9",
+    "@superalgos/mqservice": "0.0.12",
     "axios": "^0.18.0",
     "chai": "^4.2.0",
     "dotenv": "^7.0.0",

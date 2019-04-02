@@ -6,12 +6,19 @@ exports.newAssistantMock = function newAssistantMock() {
     var positions = []
     var fileRecords = []
     var fileNotFound = false
+    var marketRate = 4000
+    var availableBalance = {
+        assetA: 0,
+        assetB: 1
+    }
     return {
         dataDependencies: getDataDependencies(),
         putPosition: putPosition,
         getPositions: getPositions,
         getAvailableBalance: getAvailableBalance,
+        setAvailableBalance: setAvailableBalance,
         getMarketRate: getMarketRate,
+        setMarketRate: setMarketRate,
         addExtraData: addExtraData,
         getExtraData: getExtraData,
         executePositions: executePositions,
@@ -31,9 +38,9 @@ exports.newAssistantMock = function newAssistantMock() {
         let key = bot.devTeam + '-simulator-' + bot.codeName + '-Trading-Simulation-' + bot.dataSet + '-dataSet.V1'
         let storage = {
             getTextFile: (pFolderPath, pFileName, callBackFunction) => {
-                if(fileNotFound){
+                if (fileNotFound) {
                     callBackFunction(global.DEFAULT_FAIL_RESPONSE, "File not found.")
-                }else{
+                } else {
                     callBackFunction(global.DEFAULT_OK_RESPONSE, JSON.stringify(fileRecords))
                 }
             }
@@ -45,14 +52,18 @@ exports.newAssistantMock = function newAssistantMock() {
     }
 
     function getAvailableBalance() {
-        return {
-            assetA: 0,
-            assetB: 1
-        }
+        return availableBalance
+    }
+    function setAvailableBalance(balances) {
+        availableBalance = balances
     }
 
     function getMarketRate() {
-        return 4000
+        return marketRate
+    }
+
+    function setMarketRate(rate) {
+        marketRate = rate
     }
 
     function addExtraData(record) {
@@ -75,7 +86,7 @@ exports.newAssistantMock = function newAssistantMock() {
             trades: []
         };
         positions.push(position)
-        callBackFunction(position)
+        callBackFunction(global.DEFAULT_OK_RESPONSE, position)
     }
 
     function executePositions() {
