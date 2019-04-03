@@ -4,6 +4,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   const MODULE_NAME = 'User Bot'
   const LOG_INFO = true
   let assistant, fileStorage
+  let autopilotControl = false
 
   const {
     MESSAGE_ENTITY, MESSAGE_TYPE, ORDER_CREATOR, ORDER_TYPE, ORDER_OWNER,
@@ -20,7 +21,8 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   */
   return {
     initialize: initialize,
-    start: start
+    start: start,
+    setAutopilot: setAutopilot
   }
 
   function initialize(pAssistant, pGenes, callBackFunction) {
@@ -63,6 +65,10 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
     logger.write(MODULE_NAME, '[ERROR] ' + message)
   }
 
+  function setAutopilot(autopilot) {
+    autopilotControl = autopilot
+  }
+
   /*
     The start function is called by the platform for executing the bot every 1 minute
   */
@@ -86,46 +92,30 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
       let simulatorEngineMessage = getsimulatorEngineMessageFromFile(indicatorFileContent)
       let autopilotResponse = await getAutopilot()
 
-      autopilotResponse.autopilot = true //For testing
-
       if (simulatorEngineMessage === undefined) {
         logWarn('start -> Indicator record not found.')
         throw global.DEFAULT_RETRY_RESPONSE
       }
 
-      logInfo('start -> Processing indicator record: ' + JSON.stringify(simulatorEngineMessage))
+      logInfo('Processing indicator record: ' + JSON.stringify(simulatorEngineMessage))
 
       // Checking Stop Loss
       let assetABalance = assistant.getAvailableBalance().assetA
       let currentRate = assistant.getMarketRate()
 
       if (simulatorEngineMessage !== undefined && assetABalance > 0 && currentRate >= simulatorEngineMessage.order.stop) {
-        logInfo('manageTradeStopLoss -> Closing trade with Stop Loss.')
+        logInfo('Closing trade with Stop Loss.')
         let position = await createBuyPosition(currentRate)
 
-        let simulatorExecutorMessage = {}
+        let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
         simulatorExecutorMessage.id = position.id
-        simulatorExecutorMessage.from = MESSAGE_ENTITY.SimulationExecutor
-        simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingAssistant
-        simulatorExecutorMessage.messageType = MESSAGE_TYPE.Order
-        simulatorExecutorMessage.dateTime = position.date
-
-        simulatorExecutorMessage.order = {}
         simulatorExecutorMessage.order.id = position.id
-        simulatorExecutorMessage.order.creator = ORDER_CREATOR.SimulationEngine
-        simulatorExecutorMessage.order.dateTime = position.date
-        simulatorExecutorMessage.order.owner = ORDER_OWNER.User
-        simulatorExecutorMessage.order.exchange = global.EXCHANGE_NAME
-        simulatorExecutorMessage.order.market = global.MARKET.name
-        simulatorExecutorMessage.order.marginEnabled = ORDER_MARGIN_ENABLED.False
-        simulatorExecutorMessage.order.type = ORDER_TYPE.Limit
         simulatorExecutorMessage.order.rate = position.rate
         simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
         simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
         simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Buy
         simulatorExecutorMessage.order.size = assetABalance
         simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
-        simulatorExecutorMessage.order.sizeFilled = "All"
         simulatorExecutorMessage.order.exitOutcome = ORDER_EXIT_OUTCOME.StopLoss
 
         let record = createRecordFromObject(simulatorExecutorMessage)
@@ -134,7 +124,29 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
         return
       }
 
-      if (autopilotResponse.autopilot) {
+      // Checking Take Profits
+      if (simulatorEngineMessage !== undefined && assetABalance > 0 && currentRate <= simulatorEngineMessage.order.takeProfit) {
+        logInfo('Closing trade with Take Profits.')
+        let position = await createBuyPosition(currentRate, assetABalance)
+
+        let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
+        simulatorExecutorMessage.id = position.id
+        simulatorExecutorMessage.order.id = position.id
+        simulatorExecutorMessage.order.rate = currentRate
+        simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
+        simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
+        simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Buy
+        simulatorExecutorMessage.order.size = assetABalance
+        simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
+        simulatorExecutorMessage.order.exitOutcome = ORDER_EXIT_OUTCOME.TakeProfit
+
+        let record = createRecordFromObject(simulatorExecutorMessage)
+        assistant.addExtraData(record)
+
+        return
+      }
+
+      if (autopilotResponse.autopilot || autopilotControl) {
         await manageCloneInAutopilotOn(simulatorEngineMessage)
       } else {
         await manageCloneInAutopilotOff(simulatorEngineMessage)
@@ -146,68 +158,23 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   }
 
   async function manageCloneInAutopilotOn(simulatorEngineMessage) {
-    let assetABalance = assistant.getAvailableBalance().assetA
     let assetBBalance = assistant.getAvailableBalance().assetB
     let currentRate = assistant.getMarketRate()
 
     if (simulatorEngineMessage.messageType === MESSAGE_TYPE.Order
       && simulatorEngineMessage.order.direction === ORDER_DIRECTION.Sell) {
 
-      let position = await createSellPosition(simulatorEngineMessage.order.rate, assetBBalance)
+      let position = await createSellPosition(currentRate, assetBBalance)
 
-      let simulatorExecutorMessage = {}
+      let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
       simulatorExecutorMessage.id = position.id
-      simulatorExecutorMessage.from = MESSAGE_ENTITY.SimulationExecutor
-      simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingAssistant
-      simulatorExecutorMessage.messageType = MESSAGE_TYPE.Order
-      simulatorExecutorMessage.dateTime = position.date
-
-      simulatorExecutorMessage.order = {}
       simulatorExecutorMessage.order.id = position.id
       simulatorExecutorMessage.order.creator = ORDER_CREATOR.SimulationEngine
-      simulatorExecutorMessage.order.dateTime = position.date
-      simulatorExecutorMessage.order.owner = ORDER_OWNER.User
-      simulatorExecutorMessage.order.exchange = global.EXCHANGE_NAME
-      simulatorExecutorMessage.order.market = global.MARKET.name
-      simulatorExecutorMessage.order.marginEnabled = ORDER_MARGIN_ENABLED.False
-      simulatorExecutorMessage.order.type = ORDER_TYPE.Limit
       simulatorExecutorMessage.order.rate = currentRate
       simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
       simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
       simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Sell
       simulatorExecutorMessage.order.size = assetBBalance
-      simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
-      simulatorExecutorMessage.order.sizeFilled = 0
-      simulatorExecutorMessage.order.exitOutcome = ''
-
-      let record = createRecordFromObject(simulatorExecutorMessage)
-      assistant.addExtraData(record)
-    } else if (assetBBalance > 0) {
-      let position = await createBuyPosition(simulatorEngineMessage.order.buyOrder)
-
-      let simulatorExecutorMessage = {}
-      simulatorExecutorMessage.id = position.id
-      simulatorExecutorMessage.from = MESSAGE_ENTITY.SimulationExecutor
-      simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingAssistant
-      simulatorExecutorMessage.messageType = MESSAGE_TYPE.Order
-      simulatorExecutorMessage.dateTime = position.date
-
-      simulatorExecutorMessage.order = {}
-      simulatorExecutorMessage.order.id = position.id
-      simulatorExecutorMessage.order.creator = ORDER_CREATOR.SimulationEngine
-      simulatorExecutorMessage.order.dateTime = position.date
-      simulatorExecutorMessage.order.owner = ORDER_OWNER.User
-      simulatorExecutorMessage.order.exchange = global.EXCHANGE_NAME
-      simulatorExecutorMessage.order.market = global.MARKET.name
-      simulatorExecutorMessage.order.marginEnabled = ORDER_MARGIN_ENABLED.False
-      simulatorExecutorMessage.order.type = ORDER_TYPE.Limit
-      simulatorExecutorMessage.order.rate = currentRate
-      simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
-      simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
-      simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Buy
-      simulatorExecutorMessage.order.size = assetABalance
-      simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
-      simulatorExecutorMessage.order.sizeFilled = 0
       simulatorExecutorMessage.order.exitOutcome = ''
 
       let record = createRecordFromObject(simulatorExecutorMessage)
@@ -218,39 +185,25 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   }
 
   async function manageCloneInAutopilotOff(simulatorEngineMessage) {
-    // If there is any signal not yet approved we update it with the new indicator value
+    // If there is any signal not yet authorized we update it with the new indicator value
     let assetBBalance = assistant.getAvailableBalance().assetB
     let currentRate = assistant.getMarketRate()
 
-    let signals = await getSignalsByCloneId("SIGNALED")
+    let signals = await getSignalsByCloneId(ORDER_STATUS.Signaled)
     if (signals !== undefined && signals.length > 0) {
       for (let inProcessSignal of signals) {
         logInfo('manageCloneInAutopilotOff -> Signal waiting for approval found, updating it with latest market data.')
 
-        let simulatorExecutorMessage = {}
-        simulatorExecutorMessage.id = 0
-        simulatorExecutorMessage.from = MESSAGE_ENTITY.SimulationExecutor
+        let simulatorExecutorMessage = buildSimulatorExecutorMessage()
         simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingCokpit
         simulatorExecutorMessage.messageType = MESSAGE_TYPE.OrderUpdate
-        simulatorExecutorMessage.dateTime = bot.processDatetime.valueOf()
-
-        simulatorExecutorMessage.order = {}
-        simulatorExecutorMessage.order.id = 0
-        simulatorExecutorMessage.order.creator = ORDER_CREATOR.SimulationEngine
-        simulatorExecutorMessage.order.dateTime = bot.processDatetime.valueOf()
-        simulatorExecutorMessage.order.owner = ORDER_OWNER.User
-        simulatorExecutorMessage.order.exchange = global.EXCHANGE_NAME
-        simulatorExecutorMessage.order.market = global.MARKET.name
-        simulatorExecutorMessage.order.marginEnabled = ORDER_MARGIN_ENABLED.False
-        simulatorExecutorMessage.order.type = ORDER_TYPE.Limit
         simulatorExecutorMessage.order.rate = currentRate
         simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
         simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
         simulatorExecutorMessage.order.direction = simulatorEngineMessage.order.direction
-        simulatorExecutorMessage.order.size = simulatorEngineMessage.order.size
+        simulatorExecutorMessage.order.size = assetBBalance
         simulatorExecutorMessage.order.status = ORDER_STATUS.Signaled
         simulatorExecutorMessage.order.sizeFilled = 0
-        simulatorExecutorMessage.order.exitOutcome = ''
 
         await updateSignal(inProcessSignal.id, orderMessage)
 
@@ -266,11 +219,11 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
      *  3) Save the audit of the order placed
      *  4) Update the cockpit with the result
     */
-    let acceptedSignals = await getSignalsByCloneId("ACCEPTED")
+    let acceptedSignals = await getSignalsByCloneId(ORDER_STATUS.ManualAuthorized)
     if (acceptedSignals !== undefined && acceptedSignals.length > 0) {
       for (let acceptedSignal of acceptedSignals) {
         try {
-          logInfo('manageCloneInAutopilotOff -> Executing approved signal.')
+          logInfo('manageCloneInAutopilotOff -> Executing manual authorized signal.')
 
           // 1) Save audit containing what we received from the cockpit
           let simulatorExecutorMessage = {}
@@ -287,7 +240,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
           let position = await createSellPosition(acceptedSignal.orderData.rate, acceptedSignal.orderData.size)
 
           // 3) Save the audit of the order placed
-          simulatorExecutorMessage = {}
+          simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
           simulatorExecutorMessage.id = position.id
           simulatorExecutorMessage.from = MESSAGE_ENTITY.SimulationExecutor
           simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingAssistant
@@ -303,22 +256,23 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
           simulatorExecutorMessage.order.sizeFilled = 0
 
           // 4) Update the cockpit with the result
-          await updateSignal(acceptedSignal.id, "IN_PROCESS", "Order was placed in the market.", simulatorExecutorMessage.order)
+          await updateSignal(acceptedSignal.id, simulatorExecutorMessage)
 
           record = createRecordFromObject(simulatorExecutorMessage)
           assistant.addExtraData(record)
         } catch (error) {
           // Update the cockpit with the error
-          let simulatorExecutorMessage = {}
+          let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
           simulatorExecutorMessage.id = 0
           simulatorExecutorMessage.from = MESSAGE_ENTITY.SimulationExecutor
           simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingCokpit
           simulatorExecutorMessage.messageType = MESSAGE_TYPE.Order
           simulatorExecutorMessage.dateTime = bot.processDatetime.valueOf()
+          simulatorExecutorMessage.order.status = ORDER_STATUS.Rejected
 
           simulatorExecutorMessage.order = acceptedSignal.orderData.rate
 
-          await updateSignal(acceptedSignal.id, "FAILED", "Failed to put the order on the exchange: " + marketOrderResult.error, simulatorExecutorMessage.order)
+          await updateSignal(acceptedSignal.id, simulatorExecutorMessage)
 
           // Update the audit with the error
           let record = createRecordFromObject(simulatorExecutorMessage)
@@ -333,7 +287,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
      *  2) Save the audit of the status
      *  3) Update the cockpit with the results
     */
-    let inProcessSignals = await getSignalsByCloneId("IN_PROCESS")
+    let inProcessSignals = await getSignalsByCloneId(ORDER_STATUS.Placed)
     if (inProcessSignals !== undefined && inProcessSignals.length > 0) {
       for (let inProcessSignal of inProcessSignals) {
         logInfo('manageCloneInAutopilotOff -> Checking in process signal.')
@@ -369,26 +323,28 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
      *  2) Save the audit record for the received info from Trading Simulator
      *  3) Create the signal on the cockpit
     */
-    if (simulatorEngineMessage !== undefined && simulatorEngineMessage.messageType === "Sell") {
-      logInfo('manageCloneInAutopilotOff -> Creating new signal.')
+    if (simulatorEngineMessage !== undefined && simulatorEngineMessage.messageType === MESSAGE_TYPE.Order
+      && simulatorEngineMessage.order.direction === ORDER_DIRECTION.Sell) {
+      logInfo('Creating new signal.')
 
       // 2) Save the audit record for the received info from Trading Simulator
-      let simulatorExecutorMessage = {}
+      let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
       simulatorExecutorMessage.id = 0
-      simulatorExecutorMessage.from = MESSAGE_ENTITY.SimulationExecutor
       simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingCokpit
       simulatorExecutorMessage.messageType = MESSAGE_TYPE.Order
-      simulatorExecutorMessage.dateTime = bot.processDatetime.valueOf()
-
-      simulatorExecutorMessage.order = simulatorEngineMessage.order
+      simulatorExecutorMessage.order.id = 0
+      simulatorExecutorMessage.order.status = ORDER_STATUS.Signaled
       simulatorExecutorMessage.order.rate = currentRate
+      simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Sell
+      simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
+      simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
       simulatorExecutorMessage.order.size = assetBBalance
 
       let record = createRecordFromObject(simulatorExecutorMessage)
       assistant.addExtraData(record)
 
       // 3) Create the signal on the cockpit
-      await createSignal(context, simulatorExecutorMessage)
+      await createSignal(simulatorExecutorMessage)
     } else {
       logWarn("manageCloneInAutopilotOff -> Nothing to do, there isn't a buy or sell opportunity.")
     }
@@ -534,25 +490,27 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   }
 
   // Modules queries
-  async function getSignalsByCloneId(state) {
+  async function getSignalsByCloneId(orderStatus) {
     try {
       const cockPit = await axios({
         url: process.env.GATEWAY_ENDPOINT,
         method: 'post',
         data: {
           query: `
-            query($cloneId: String!, $state: cockpit_SignalStateEnum){
-              cockpit_SignalsByCloneId(cloneId: $cloneId, state:$state){
+            query($cloneId: String!, $orderStatus: String){
+              cockpit_SignalsByCloneId(cloneId: $cloneId, orderStatus:$orderStatus){
                 id
-                state
                 cloneId
+                orderId
+                orderCreator
+                orderStatus
                 orderData
               }
             }
             `,
           variables: {
             cloneId: process.env.CLONE_ID,
-            state: state
+            orderStatus: orderStatus
           },
         },
         headers: {
@@ -560,15 +518,11 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
         }
       })
 
-      if (cockPit.data.errors) {
-        throw new Error(cockPit.data.errors[0].message)
-      } else {
-        logInfo("getSignalsByCloneId -> Ok: " + state)
-        return cockPit.data.data.cockpit_SignalsByCloneId
-      }
+      logInfo("Retrieved signals in status: " + orderStatus)
+      return cockPit.data.data.cockpit_SignalsByCloneId
 
     } catch (error) {
-      logError('getSignalsByCloneId error: ' + error)
+      logError('getSignalsByCloneId error: ' + error.response.data.errors[0])
       throw error
     }
   }
@@ -605,42 +559,35 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
         }
       })
 
-      if (cockPit.data.errors) {
-        throw new Error(cockPit.data.errors[0].message)
-      } else {
-        logInfo('updateSignal -> Ok.')
-        return cockPit.data.data.cockpit_UpdateSignal
-      }
+      logInfo('updateSignal ok.')
+      return cockPit.data.data.cockpit_UpdateSignal
     } catch (error) {
-      logError('updateSignal error: ' + error)
+      logError('updateSignal error: ' + error.response.data.errors[0])
       throw error
     }
   }
 
-  async function createSignal(orderData) {
+  async function createSignal(message) {
     try {
       const cockPit = await axios({
         url: process.env.GATEWAY_ENDPOINT,
         method: 'post',
         data: {
           query: `
-            mutation ($state: cockpit_SignalStateEnum!, $cloneId: String!, $orderData:cockpit_JSON, ){
+            mutation ($cloneId: String!, $message: cockpit_JSON!){
               cockpit_CreateSignal(
-                state: $state
                 cloneId: $cloneId
-                context: $context
-                orderData: $orderData
+                message: $message
               ) {
                 id
-                state
                 cloneId
+                orderStatus
               }
             }
             `,
           variables: {
-            state: "SIGNALED",
             cloneId: process.env.CLONE_ID,
-            orderData: orderData
+            message: message
           },
         },
         headers: {
@@ -648,15 +595,10 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
         }
       })
 
-      if (cockPit.data.errors) {
-        throw new Error(cockPit.data.errors[0].message)
-      } else {
-        logInfo('createSignal -> Ok.')
-        return cockPit.data.data.cockpit_CreateSignal
-      }
-
+      logInfo('createSignal ok.')
+      return cockPit.data.data.cockpit_CreateSignal
     } catch (error) {
-      logger.write(MODULE_NAME, "[INFO] createSignal error: " + error)
+      logInfo("createSignal error: " + error.response.data.errors[0])
       throw error
     }
   }
@@ -718,6 +660,29 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   function pad(str, max) {
     str = str.toString()
     return str.length < max ? pad('0' + str, max) : str
+  }
+
+  function buildBasicSimulatorExecutorMessage() {
+    var simulatorExecutorMessage = {}
+    simulatorExecutorMessage.id = 0
+    simulatorExecutorMessage.from = MESSAGE_ENTITY.SimulationExecutor
+    simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingAssistant
+    simulatorExecutorMessage.messageType = MESSAGE_TYPE.Order
+    simulatorExecutorMessage.dateTime = bot.processDatetime.valueOf()
+
+    simulatorExecutorMessage.order = {}
+    simulatorExecutorMessage.order.dateTime = bot.processDatetime.valueOf()
+    simulatorExecutorMessage.order.creator = ORDER_CREATOR.SimulationEngine
+    simulatorExecutorMessage.order.owner = ORDER_OWNER.User
+    simulatorExecutorMessage.order.exchange = global.EXCHANGE_NAME
+    simulatorExecutorMessage.order.market = global.MARKET.name
+    simulatorExecutorMessage.order.marginEnabled = ORDER_MARGIN_ENABLED.False
+    simulatorExecutorMessage.order.type = ORDER_TYPE.Limit
+    simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
+    simulatorExecutorMessage.order.sizeFilled = 0
+    simulatorExecutorMessage.order.exitOutcome = ''
+
+    return simulatorExecutorMessage
   }
 
 }
