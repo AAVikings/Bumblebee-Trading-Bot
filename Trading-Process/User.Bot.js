@@ -15,7 +15,6 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   const axios = require('axios')
   const util = require('util')
 
-
   /*
     This objects returns two public functions that will be used to integrate with the platform.
   */
@@ -185,40 +184,13 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   }
 
   async function manageCloneInAutopilotOff(simulatorEngineMessage) {
-    // If there is any signal not yet authorized we update it with the new indicator value
-    let assetBBalance = assistant.getAvailableBalance().assetB
-    let currentRate = assistant.getMarketRate()
-
-    let signals = await getSignalsByCloneId(ORDER_STATUS.Signaled)
-    if (signals !== undefined && signals.length > 0) {
-      for (let inProcessSignal of signals) {
-        logInfo('manageCloneInAutopilotOff -> Signal waiting for approval found, updating it with latest market data.')
-
-        let simulatorExecutorMessage = buildSimulatorExecutorMessage()
-        simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingCokpit
-        simulatorExecutorMessage.messageType = MESSAGE_TYPE.OrderUpdate
-        simulatorExecutorMessage.order.rate = currentRate
-        simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
-        simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
-        simulatorExecutorMessage.order.direction = simulatorEngineMessage.order.direction
-        simulatorExecutorMessage.order.size = assetBBalance
-        simulatorExecutorMessage.order.status = ORDER_STATUS.Signaled
-        simulatorExecutorMessage.order.sizeFilled = 0
-
-        await updateSignal(inProcessSignal.id, orderMessage)
-
-        let record = createRecordFromObject(simulatorExecutorMessage)
-        assistant.addExtraData(record)
-      }
-    }
-
     /**
-     * If there is an accepted signal on the cockpit we will proceed to:
-     *  1) Save an audit containing what we received from the cockpit
-     *  2) Execute the order in the market as received
-     *  3) Save the audit of the order placed
-     *  4) Update the cockpit with the result
-    */
+    * If there is a ManualAuthorized order on the cockpit we will proceed to:
+    *  1) Save an audit containing what we received from the cockpit
+    *  2) Execute the order in the market as received
+    *  3) Save the audit of the order placed
+    *  4) Update the cockpit with the result
+   */
     let acceptedSignals = await getSignalsByCloneId(ORDER_STATUS.ManualAuthorized)
     if (acceptedSignals !== undefined && acceptedSignals.length > 0) {
       for (let acceptedSignal of acceptedSignals) {
@@ -226,13 +198,12 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
           logInfo('manageCloneInAutopilotOff -> Executing manual authorized signal.')
 
           // 1) Save audit containing what we received from the cockpit
-          let simulatorExecutorMessage = {}
+          let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
           simulatorExecutorMessage.id = 0
           simulatorExecutorMessage.from = MESSAGE_ENTITY.TradingCokpit
           simulatorExecutorMessage.to = MESSAGE_ENTITY.SimulationExecutor
-          simulatorExecutorMessage.messageType = MESSAGE_TYPE.Order
-          simulatorExecutorMessage.dateTime = bot.processDatetime.valueOf()
           simulatorExecutorMessage.order = acceptedSignal.orderData // we save the order as received
+          simulatorExecutorMessage.order.status = ORDER_STATUS.ManualAuthorized
           let record = createRecordFromObject(simulatorExecutorMessage)
           assistant.addExtraData(record)
 
@@ -244,7 +215,6 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
           simulatorExecutorMessage.id = position.id
           simulatorExecutorMessage.from = MESSAGE_ENTITY.SimulationExecutor
           simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingAssistant
-          simulatorExecutorMessage.messageType = MESSAGE_TYPE.Order
           simulatorExecutorMessage.dateTime = position.date
 
           simulatorExecutorMessage.order = acceptedSignal.orderData
@@ -260,6 +230,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
 
           record = createRecordFromObject(simulatorExecutorMessage)
           assistant.addExtraData(record)
+          return
         } catch (error) {
           // Update the cockpit with the error
           let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
@@ -270,50 +241,82 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
           simulatorExecutorMessage.dateTime = bot.processDatetime.valueOf()
           simulatorExecutorMessage.order.status = ORDER_STATUS.Rejected
 
-          simulatorExecutorMessage.order = acceptedSignal.orderData.rate
+          simulatorExecutorMessage.order = acceptedSignal.order
 
           await updateSignal(acceptedSignal.id, simulatorExecutorMessage)
 
           // Update the audit with the error
           let record = createRecordFromObject(simulatorExecutorMessage)
           assistant.addExtraData(record)
+          return
         }
       }
     }
 
     /**
-     * If there is an in process signal on the cockpit we will proceed to:
-     *  1) Check order status on the market
-     *  2) Save the audit of the status
-     *  3) Update the cockpit with the results
-    */
+    * If there is a Placed order on the cockpit we will proceed to:
+    *  1) Check order status on the market
+    *  2) Save the audit of the status
+    *  3) Update the cockpit with the results
+   */
     let inProcessSignals = await getSignalsByCloneId(ORDER_STATUS.Placed)
     if (inProcessSignals !== undefined && inProcessSignals.length > 0) {
       for (let inProcessSignal of inProcessSignals) {
         logInfo('manageCloneInAutopilotOff -> Checking in process signal.')
         // 1) Check order status on the market
         let position = checkSignalCompletion()
-        if (position) {
+        if (position || position === undefined) {
           // 2) Save the audit of the status
-          let simulatorExecutorMessage = {}
-          simulatorExecutorMessage.id = position.id
-          simulatorExecutorMessage.from = MESSAGE_ENTITY.TradingAssistant
-          simulatorExecutorMessage.to = MESSAGE_ENTITY.SimulationExecutor
-          simulatorExecutorMessage.messageType = MESSAGE_TYPE.Order
-          simulatorExecutorMessage.dateTime = position.date
+          let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
+          simulatorExecutorMessage.id = inProcessSignal.orderData.id
+          simulatorExecutorMessage.from = MESSAGE_ENTITY.SimulationExecutor
+          simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingCokpit
+          simulatorExecutorMessage.messageType = MESSAGE_TYPE.OrderUpdate
 
           simulatorExecutorMessage.order = inProcessSignal.orderData
           simulatorExecutorMessage.order.status = ORDER_STATUS.Filled
           simulatorExecutorMessage.order.sizeFilled = 'All'
 
           // 3) Update the cockpit with the results
-          await updateSignal(inProcessSignal.id, "PROCESSED", "The order was executed on the market.", simulatorExecutorMessage.order)
+          await updateSignal(inProcessSignal.id, simulatorExecutorMessage)
 
           let record = createRecordFromObject(simulatorExecutorMessage)
           assistant.addExtraData(record)
         } else {
           // Otherwise: Save the audit of the order status, wichs is currently saved by the trading process
         }
+        return
+      }
+    }
+
+    /**
+     * If there is any signal not yet authorized:
+     *  1) Update the signal with the new indicator value on the cockpit
+     *  3) Save the audit of the message sent
+    */
+    let assetBBalance = assistant.getAvailableBalance().assetB
+    let currentRate = assistant.getMarketRate()
+    let signals = await getSignalsByCloneId(ORDER_STATUS.Signaled)
+    if (signals !== undefined && signals.length > 0) {
+      for (let inProcessSignal of signals) {
+        logInfo('manageCloneInAutopilotOff -> Signal waiting for approval found, updating it with latest market data.')
+
+        let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
+        simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingCokpit
+        simulatorExecutorMessage.messageType = MESSAGE_TYPE.OrderUpdate
+        simulatorExecutorMessage.order.id = 0
+        simulatorExecutorMessage.order.rate = currentRate
+        simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
+        simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
+        simulatorExecutorMessage.order.direction = simulatorEngineMessage.order.direction
+        simulatorExecutorMessage.order.size = assetBBalance
+        simulatorExecutorMessage.order.status = ORDER_STATUS.Signaled
+
+        await updateSignal(inProcessSignal.id, simulatorExecutorMessage)
+
+        let record = createRecordFromObject(simulatorExecutorMessage)
+        assistant.addExtraData(record)
+        return
       }
     }
 
@@ -527,31 +530,27 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
     }
   }
 
-  async function updateSignal(signalId, state, reason, orderData) {
+  async function updateSignal(signalId, message) {
     try {
       const cockPit = await axios({
         url: process.env.GATEWAY_ENDPOINT,
         method: 'post',
         data: {
           query: `
-              mutation ($signalId: ID!, $state: cockpit_SignalStateEnum, $reason:cockpit_JSON, $orderData:cockpit_JSON){
+              mutation ($signalId: ID!, $message:cockpit_JSON!){
                 cockpit_UpdateSignal(
                   id: $signalId
-                  state: $state
-                  reason: $reason
-                  orderData: $orderData
+                  message: $message
                 ) {
                   id
-                  state
                   cloneId
+                  orderStatus
                 }
               }
               `,
           variables: {
             signalId: signalId,
-            state: state,
-            reason: reason,
-            orderData: orderData
+            message: message
           },
         },
         headers: {
