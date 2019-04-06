@@ -22,12 +22,12 @@ exports.newAssistantMock = function newAssistantMock() {
         addExtraData: addExtraData,
         getExtraData: getExtraData,
         executePositions: executePositions,
-        setFileRecords: setFileRecords,
+        setFileMessages: setFileMessages,
         setFileNotFound: setFileNotFound
     }
 
-    function setFileRecords(records) {
-        fileRecords = records
+    function setFileMessages(messages) {
+        fileRecords = messages
     }
     function setFileNotFound(value) {
         fileNotFound = value
@@ -66,8 +66,8 @@ exports.newAssistantMock = function newAssistantMock() {
         marketRate = rate
     }
 
-    function addExtraData(record) {
-        extraData.push(record)
+    function addExtraData(message) {
+        extraData.push(message)
     }
 
     function getExtraData() {

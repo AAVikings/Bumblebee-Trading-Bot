@@ -6,11 +6,13 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   let assistant, fileStorage
   let autopilotControl = false
 
+  const orderMessage = require("@superalgos/mqservice/orderMessage/orderMessage")
+
   const {
     MESSAGE_ENTITY, MESSAGE_TYPE, ORDER_CREATOR, ORDER_TYPE, ORDER_OWNER,
     ORDER_DIRECTION, ORDER_STATUS, ORDER_EXIT_OUTCOME, ORDER_MARGIN_ENABLED,
-    getRecord, createRecordFromObject
-  } = require("@superalgos/mqservice")
+    getMessage, createMessageFromObject
+  } = orderMessage.newOrderMessage()
 
   const axios = require('axios')
   const util = require('util')
@@ -88,15 +90,15 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
   async function executorLogic() {
     try {
       let indicatorFileContent = await getIndicatorFile()
-      let simulatorEngineMessage = getsimulatorEngineMessageFromFile(indicatorFileContent)
+      let simulatorEngineMessage = getSimulatorEngineMessageFromFile(indicatorFileContent)
       let autopilotResponse = await getAutopilot()
 
       if (simulatorEngineMessage === undefined) {
-        logWarn('start -> Indicator record not found.')
+        logWarn('start -> Indicator message not found.')
         throw global.DEFAULT_RETRY_RESPONSE
       }
 
-      logInfo('Processing indicator record: ' + JSON.stringify(simulatorEngineMessage))
+      logInfo('Processing indicator message: ' + JSON.stringify(simulatorEngineMessage))
 
       // Checking Stop Loss
       let assetABalance = assistant.getAvailableBalance().assetA
@@ -117,8 +119,8 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
         simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
         simulatorExecutorMessage.order.exitOutcome = ORDER_EXIT_OUTCOME.StopLoss
 
-        let record = createRecordFromObject(simulatorExecutorMessage)
-        assistant.addExtraData(record)
+        let message = createMessageFromObject(simulatorExecutorMessage)
+        assistant.addExtraData(message)
 
         return
       }
@@ -139,8 +141,8 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
         simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
         simulatorExecutorMessage.order.exitOutcome = ORDER_EXIT_OUTCOME.TakeProfit
 
-        let record = createRecordFromObject(simulatorExecutorMessage)
-        assistant.addExtraData(record)
+        let message = createMessageFromObject(simulatorExecutorMessage)
+        assistant.addExtraData(message)
 
         return
       }
@@ -176,8 +178,8 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
       simulatorExecutorMessage.order.size = assetBBalance
       simulatorExecutorMessage.order.exitOutcome = ''
 
-      let record = createRecordFromObject(simulatorExecutorMessage)
-      assistant.addExtraData(record)
+      let message = createMessageFromObject(simulatorExecutorMessage)
+      assistant.addExtraData(message)
     } else {
       logInfo("manageCloneInAutopilotOn -> Nothing to do, there isn't a buy or sell opportunity.")
     }
@@ -204,8 +206,8 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
           simulatorExecutorMessage.to = MESSAGE_ENTITY.SimulationExecutor
           simulatorExecutorMessage.order = acceptedSignal.orderData // we save the order as received
           simulatorExecutorMessage.order.status = ORDER_STATUS.ManualAuthorized
-          let record = createRecordFromObject(simulatorExecutorMessage)
-          assistant.addExtraData(record)
+          let message = createMessageFromObject(simulatorExecutorMessage)
+          assistant.addExtraData(message)
 
           // 2) Execute the order in the market as received
           let position = await createSellPosition(acceptedSignal.orderData.rate, acceptedSignal.orderData.size)
@@ -228,8 +230,8 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
           // 4) Update the cockpit with the result
           await updateSignal(acceptedSignal.id, simulatorExecutorMessage)
 
-          record = createRecordFromObject(simulatorExecutorMessage)
-          assistant.addExtraData(record)
+          message = createMessageFromObject(simulatorExecutorMessage)
+          assistant.addExtraData(message)
           return
         } catch (error) {
           // Update the cockpit with the error
@@ -246,8 +248,8 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
           await updateSignal(acceptedSignal.id, simulatorExecutorMessage)
 
           // Update the audit with the error
-          let record = createRecordFromObject(simulatorExecutorMessage)
-          assistant.addExtraData(record)
+          let message = createMessageFromObject(simulatorExecutorMessage)
+          assistant.addExtraData(message)
           return
         }
       }
@@ -275,13 +277,13 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
 
           simulatorExecutorMessage.order = inProcessSignal.orderData
           simulatorExecutorMessage.order.status = ORDER_STATUS.Filled
-          simulatorExecutorMessage.order.sizeFilled = 'All'
+          simulatorExecutorMessage.order.sizeFilled = -1
 
           // 3) Update the cockpit with the results
           await updateSignal(inProcessSignal.id, simulatorExecutorMessage)
 
-          let record = createRecordFromObject(simulatorExecutorMessage)
-          assistant.addExtraData(record)
+          let message = createMessageFromObject(simulatorExecutorMessage)
+          assistant.addExtraData(message)
         } else {
           // Otherwise: Save the audit of the order status, wichs is currently saved by the trading process
         }
@@ -314,8 +316,8 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
 
         await updateSignal(inProcessSignal.id, simulatorExecutorMessage)
 
-        let record = createRecordFromObject(simulatorExecutorMessage)
-        assistant.addExtraData(record)
+        let message = createMessageFromObject(simulatorExecutorMessage)
+        assistant.addExtraData(message)
         return
       }
     }
@@ -323,14 +325,14 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
     /**
      *  Finally:
      *  1) Check if it's needed to create a new signal based on the indicator
-     *  2) Save the audit record for the received info from Trading Simulator
+     *  2) Save the audit message for the received info from Trading Simulator
      *  3) Create the signal on the cockpit
     */
     if (simulatorEngineMessage !== undefined && simulatorEngineMessage.messageType === MESSAGE_TYPE.Order
       && simulatorEngineMessage.order.direction === ORDER_DIRECTION.Sell) {
       logInfo('Creating new signal.')
 
-      // 2) Save the audit record for the received info from Trading Simulator
+      // 2) Save the audit message for the received info from Trading Simulator
       let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
       simulatorExecutorMessage.id = 0
       simulatorExecutorMessage.to = MESSAGE_ENTITY.TradingCokpit
@@ -343,8 +345,8 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
       simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
       simulatorExecutorMessage.order.size = assetBBalance
 
-      let record = createRecordFromObject(simulatorExecutorMessage)
-      assistant.addExtraData(record)
+      let message = createMessageFromObject(simulatorExecutorMessage)
+      assistant.addExtraData(message)
 
       // 3) Create the signal on the cockpit
       await createSignal(simulatorExecutorMessage)
@@ -451,7 +453,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
     }
   }
 
-  function getsimulatorEngineMessageFromFile(indicatorFileContent) {
+  function getSimulatorEngineMessageFromFile(indicatorFileContent) {
     try {
       let lastIndexIndicatorFile = indicatorFileContent.length - 1
       let lastAvailableDateTime = indicatorFileContent[lastIndexIndicatorFile][0]
@@ -459,23 +461,23 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
       if (bot.processDatetime.valueOf() <= lastAvailableDateTime || !isExecutionToday()) {
         for (let i = 0; i < indicatorFileContent.length; i++) {
           if (bot.processDatetime.valueOf() >= indicatorFileContent[i][0] && bot.processDatetime.valueOf() < indicatorFileContent[i][1]) {
-            return getRecord(indicatorFileContent[i][25])
+            return getMessage(indicatorFileContent[i][25])
           }
         }
 
-        logWarn('getsimulatorEngineMessageFromFile -> The indicator record was not found at time: ' + bot.processDatetime.valueOf())
+        logWarn('getSimulatorEngineMessageFromFile -> The indicator message was not found at time: ' + bot.processDatetime.valueOf())
       } else {
-        // Running live we will process last available Indicator Record only if it's delayed 25 minutes top
+        // Running live we will process last available Indicator Message only if it's delayed 25 minutes top
         let maxTolerance = 120 * 60 * 1000
         if (bot.processDatetime.valueOf() <= (lastAvailableDateTime + maxTolerance)) {
-          return getRecord(indicatorFileContent[lastIndexIndicatorFile][25])
+          return getMessage(indicatorFileContent[lastIndexIndicatorFile][25])
         } else {
-          logWarn('getsimulatorEngineMessageFromFile -> Last available indicator older than 2 hours. Skipping execution.')
+          logWarn('getSimulatorEngineMessageFromFile -> Last available indicator older than 2 hours. Skipping execution.')
         }
       }
     } catch (error) {
-      logError('getsimulatorEngineMessageFromFile -> error = ' + error.message)
-      throw error
+      logError('getSimulatorEngineMessageFromFile -> error = ' + error.message)
+      throw global.DEFAULT_RETRY_RESPONSE
     }
   }
 
@@ -526,7 +528,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
 
     } catch (error) {
       logError('getSignalsByCloneId error: ' + error.response.data.errors[0])
-      throw error
+      throw global.DEFAULT_RETRY_RESPONSE
     }
   }
 
@@ -562,7 +564,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
       return cockPit.data.data.cockpit_UpdateSignal
     } catch (error) {
       logError('updateSignal error: ' + error.response.data.errors[0])
-      throw error
+      throw global.DEFAULT_RETRY_RESPONSE
     }
   }
 
@@ -598,7 +600,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
       return cockPit.data.data.cockpit_CreateSignal
     } catch (error) {
       logInfo("createSignal error: " + error.response.data.errors[0])
-      throw error
+      throw global.DEFAULT_RETRY_RESPONSE
     }
   }
 
@@ -635,7 +637,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
 
     } catch (error) {
       logInfo('getAutopilot error: ' + error)
-      throw error
+      throw global.DEFAULT_RETRY_RESPONSE
     }
   }
 
