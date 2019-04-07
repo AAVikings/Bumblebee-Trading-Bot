@@ -106,45 +106,75 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
 
       if (simulatorEngineMessage !== undefined && assetABalance > 0 && currentRate >= simulatorEngineMessage.order.stop) {
         logInfo('Closing trade with Stop Loss.')
-        let position = await createBuyPosition(currentRate)
+        try {
+          let position = await createBuyPosition(currentRate)
 
-        let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
-        simulatorExecutorMessage.id = position.id
-        simulatorExecutorMessage.order.id = position.id
-        simulatorExecutorMessage.order.rate = position.rate
-        simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
-        simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
-        simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Buy
-        simulatorExecutorMessage.order.size = assetABalance
-        simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
-        simulatorExecutorMessage.order.exitOutcome = ORDER_EXIT_OUTCOME.StopLoss
+          let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
+          simulatorExecutorMessage.id = position.id
+          simulatorExecutorMessage.order.id = position.id
+          simulatorExecutorMessage.order.rate = position.rate
+          simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
+          simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
+          simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Buy
+          simulatorExecutorMessage.order.size = assetABalance
+          simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
+          simulatorExecutorMessage.order.exitOutcome = ORDER_EXIT_OUTCOME.StopLoss
 
-        let message = createMessageFromObject(simulatorExecutorMessage)
-        assistant.addExtraData(message)
+          let message = createMessageFromObject(simulatorExecutorMessage)
+          assistant.addExtraData(message)
+        } catch (error) {
+          let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
+          simulatorExecutorMessage.from = MESSAGE_ENTITY.TradingAssistant
+          simulatorExecutorMessage.to = MESSAGE_ENTITY.SimulationExecutor
+          simulatorExecutorMessage.order.rate = position.rate
+          simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
+          simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
+          simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Buy
+          simulatorExecutorMessage.order.size = assetABalance
+          simulatorExecutorMessage.order.status = ORDER_STATUS.Rejected
 
-        return
+          let message = createMessageFromObject(simulatorExecutorMessage)
+          assistant.addExtraData(message)
+        } finally {
+          return
+        }
       }
 
       // Checking Take Profits
       if (simulatorEngineMessage !== undefined && assetABalance > 0 && currentRate <= simulatorEngineMessage.order.takeProfit) {
         logInfo('Closing trade with Take Profits.')
-        let position = await createBuyPosition(currentRate, assetABalance)
+        try {
+          let position = await createBuyPosition(currentRate, assetABalance)
 
-        let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
-        simulatorExecutorMessage.id = position.id
-        simulatorExecutorMessage.order.id = position.id
-        simulatorExecutorMessage.order.rate = currentRate
-        simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
-        simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
-        simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Buy
-        simulatorExecutorMessage.order.size = assetABalance
-        simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
-        simulatorExecutorMessage.order.exitOutcome = ORDER_EXIT_OUTCOME.TakeProfit
+          let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
+          simulatorExecutorMessage.id = position.id
+          simulatorExecutorMessage.order.id = position.id
+          simulatorExecutorMessage.order.rate = currentRate
+          simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
+          simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
+          simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Buy
+          simulatorExecutorMessage.order.size = assetABalance
+          simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
+          simulatorExecutorMessage.order.exitOutcome = ORDER_EXIT_OUTCOME.TakeProfit
 
-        let message = createMessageFromObject(simulatorExecutorMessage)
-        assistant.addExtraData(message)
+          let message = createMessageFromObject(simulatorExecutorMessage)
+          assistant.addExtraData(message)
+        } catch (error) {
+          let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
+          simulatorExecutorMessage.from = MESSAGE_ENTITY.TradingAssistant
+          simulatorExecutorMessage.to = MESSAGE_ENTITY.SimulationExecutor
+          simulatorExecutorMessage.order.rate = currentRate
+          simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
+          simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
+          simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Buy
+          simulatorExecutorMessage.order.size = assetABalance
+          simulatorExecutorMessage.order.status = ORDER_STATUS.Rejected
 
-        return
+          let message = createMessageFromObject(simulatorExecutorMessage)
+          assistant.addExtraData(message)
+        } finally {
+          return
+        }
       }
 
       if (autopilotResponse.autopilot || autopilotControl) {
@@ -165,21 +195,34 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
     if (simulatorEngineMessage.messageType === MESSAGE_TYPE.Order
       && simulatorEngineMessage.order.direction === ORDER_DIRECTION.Sell) {
 
-      let position = await createSellPosition(currentRate, assetBBalance)
+      try {
+        let position = await createSellPosition(currentRate, assetBBalance)
+        let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
+        simulatorExecutorMessage.id = position.id
+        simulatorExecutorMessage.order.id = position.id
+        simulatorExecutorMessage.order.rate = currentRate
+        simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
+        simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
+        simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Sell
+        simulatorExecutorMessage.order.size = assetBBalance
 
-      let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
-      simulatorExecutorMessage.id = position.id
-      simulatorExecutorMessage.order.id = position.id
-      simulatorExecutorMessage.order.creator = ORDER_CREATOR.SimulationEngine
-      simulatorExecutorMessage.order.rate = currentRate
-      simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
-      simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
-      simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Sell
-      simulatorExecutorMessage.order.size = assetBBalance
-      simulatorExecutorMessage.order.exitOutcome = ''
+        let message = createMessageFromObject(simulatorExecutorMessage)
+        assistant.addExtraData(message)
+      } catch (error) {
+        let simulatorExecutorMessage = buildBasicSimulatorExecutorMessage()
+        simulatorExecutorMessage.from = MESSAGE_ENTITY.TradingAssistant
+        simulatorExecutorMessage.to = MESSAGE_ENTITY.SimulationExecutor
+        simulatorExecutorMessage.messageType = MESSAGE_TYPE.Order
+        simulatorExecutorMessage.order.rate = currentRate
+        simulatorExecutorMessage.order.stop = simulatorEngineMessage.order.stop
+        simulatorExecutorMessage.order.takeProfit = simulatorEngineMessage.order.takeProfit
+        simulatorExecutorMessage.order.direction = ORDER_DIRECTION.Sell
+        simulatorExecutorMessage.order.size = assetBBalance
+        simulatorExecutorMessage.order.status = ORDER_STATUS.Rejected
 
-      let message = createMessageFromObject(simulatorExecutorMessage)
-      assistant.addExtraData(message)
+        let message = createMessageFromObject(simulatorExecutorMessage)
+        assistant.addExtraData(message)
+      }
     } else {
       logInfo("manageCloneInAutopilotOn -> Nothing to do, there isn't a buy or sell opportunity.")
     }
@@ -377,10 +420,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
       return position
     } else {
       logInfo('createBuyPosition -> Not enough available balance to buy.')
-      /* TODO manage when there is no founds to process the order:
-        a) If the order is comming from the cockpit, send a notification back
-        b) If the order was on autopilot do nothing
-      */
+      throw new Error('There is not enough available balance to buy.')
     }
   }
 
@@ -405,10 +445,7 @@ exports.newUserBot = function newUserBot(bot, logger, COMMONS_MODULE) {
       return position
     } else {
       logInfo('createSellPosition -> There is not enough available balance to sell.')
-      /* TODO manage when there is no founds to process the order:
-        a) If the order is comming from the cockpit, send a notification back
-        b) If the order was on autopilot do nothing
-      */
+      throw new Error('There is not enough available balance to sell.')
     }
   }
 
