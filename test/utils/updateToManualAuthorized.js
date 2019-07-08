@@ -26,7 +26,7 @@ exports.updateToManualAuthorized = async function (processDatetime) {
 async function updateSignal(signalId, message) {
   try {
     const cockPit = await axios({
-      url: process.env.GATEWAY_ENDPOINT,
+      url: process.env.GATEWAY_ENDPOINT_K8S,
       method: 'post',
       data: {
         query: `
@@ -62,7 +62,7 @@ async function updateSignal(signalId, message) {
 async function getSignalsByCloneId(orderStatus) {
   try {
     const cockPit = await axios({
-      url: process.env.GATEWAY_ENDPOINT,
+      url: process.env.GATEWAY_ENDPOINT_K8S,
       method: 'post',
       data: {
         query: `

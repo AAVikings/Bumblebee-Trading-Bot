@@ -1,5 +1,6 @@
 var bot = require("../../this.bot.config.json")
 
+const assistantCache = new Map()
 exports.newAssistantMock = function newAssistantMock() {
 
     var extraData = []
@@ -23,7 +24,17 @@ exports.newAssistantMock = function newAssistantMock() {
         getExtraData: getExtraData,
         executePositions: executePositions,
         setFileMessages: setFileMessages,
-        setFileNotFound: setFileNotFound
+        setFileNotFound: setFileNotFound,
+        rememberThis: rememberThis,
+        remindMeOf: remindMeOf
+    }
+
+    function rememberThis(pKey, pValue) {
+        assistantCache.set(pKey, pValue)
+    }
+
+    function remindMeOf(pKey) {
+        return assistantCache.get(pKey)
     }
 
     function setFileMessages(messages) {
