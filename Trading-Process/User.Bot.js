@@ -211,12 +211,6 @@ exports.newUserBot = function newUserBot(bot, logger) {
     let assetBBalance = assistant.getAvailableBalance().assetB
     let currentRate = assistant.getMarketRate()
 
-    if (simulatorEngineMessage.messageType === MESSAGE_TYPE.OrderUpdate
-      && assistant.remindMeOf('lastSimulatorEngineMessageId') === 0) {
-      logInfo("manageCloneInAutopilotOn -> An order update was received before an order creation, we will treat this one as creation.")
-      simulatorEngineMessage.messageType = MESSAGE_TYPE.Order
-    }
-
     if (simulatorEngineMessage.messageType === MESSAGE_TYPE.Order
       && simulatorEngineMessage.order.direction === ORDER_DIRECTION.Sell) {
 
