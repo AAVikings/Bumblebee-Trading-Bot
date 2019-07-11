@@ -46,9 +46,6 @@ exports.newUserBot = function newUserBot(bot, logger) {
       fileStorage = assistant.dataDependencies.dataSets.get(key)
 
       if (fileStorage !== undefined) {
-        assistant.rememberThis('lastSimulatorEngineMessageId', 0)
-        assistant.rememberThis('lastStopLoss', 0)
-        assistant.rememberThis('lastTakeProfit', 0)
         callBackFunction(global.DEFAULT_OK_RESPONSE)
       } else {
         logError('initialize -> Failed to initialize storage. Key not found:' + key)
@@ -93,6 +90,13 @@ exports.newUserBot = function newUserBot(bot, logger) {
     })
   }
 
+  function getValueFromPreviousExecution(key) {
+    let value = assistant.remindMeOf(key)
+    if (value === undefined)
+      value = 0
+    return value
+  }
+
   async function executorLogic() {
     try {
       let indicatorFileContent = await getIndicatorFile()
@@ -102,12 +106,16 @@ exports.newUserBot = function newUserBot(bot, logger) {
       let stopLoss, takeProfit
       if (simulatorEngineMessage === undefined) {
         logWarn('start -> Simulator message not available. Will proceed to check SL and TP from previous execution.')
-        stopLoss = assistant.remindMeOf('lastStopLoss')
-        takeProfit = assistant.remindMeOf('lastTakeProfit')
+        stopLoss = getValueFromPreviousExecution('lastStopLoss')
+        takeProfit = getValueFromPreviousExecution('lastTakeProfit')
       } else {
         logInfo('Processing simulator record: ' + JSON.stringify(simulatorEngineMessage))
-        stopLoss = simulatorEngineMessage.order.stop
-        takeProfit = simulatorEngineMessage.order.takeProfit
+        if (simulatorEngineMessage.order.messageType === MESSAGE_TYPE.OrderUpdate) {
+          stopLoss = simulatorEngineMessage.order.stop
+          takeProfit = simulatorEngineMessage.order.takeProfit
+          assistant.rememberThis('lastStopLoss', stopLoss)
+          assistant.rememberThis('lastTakeProfit', takeProfit)
+        }
       }
 
       // Checking Stop Loss
@@ -214,7 +222,7 @@ exports.newUserBot = function newUserBot(bot, logger) {
     if (simulatorEngineMessage.messageType === MESSAGE_TYPE.Order
       && simulatorEngineMessage.order.direction === ORDER_DIRECTION.Sell) {
 
-      let lastSimulatorEngineMessageId = assistant.remindMeOf('lastSimulatorEngineMessageId')
+      let lastSimulatorEngineMessageId = getValueFromPreviousExecution('lastSimulatorEngineMessageId')
       if (lastSimulatorEngineMessageId >= simulatorEngineMessage.id) {
         logInfo("manageCloneInAutopilotOn -> Order message was previously processed.")
         return
@@ -233,7 +241,7 @@ exports.newUserBot = function newUserBot(bot, logger) {
 
         let message = createMessageFromObject(simulatorExecutorMessage)
         assistant.addExtraData(message)
-        assistant.rememberThis('lastSimulatorEngineMessageId', parseInt(simulatorEngineMessage.id))
+        assistant.rememberThis('lastSimulatorEngineMessageId', simulatorEngineMessage.id)
         assistant.rememberThis('lastStopLoss', simulatorEngineMessage.order.stop)
         assistant.rememberThis('lastTakeProfit', simulatorEngineMessage.order.takeProfit)
       } catch (error) {
@@ -524,7 +532,7 @@ exports.newUserBot = function newUserBot(bot, logger) {
 
   // Storage functions
   async function getIndicatorFile() {
-    logInfo('getIndicatorFile -> Entering function.')
+    logInfo('getIndicatorFile -> Entering function. ' + bot.processDatetime.toISOString())
 
     let filePath
     if (bot.processes[0].timePeriod > 2700000) {
@@ -778,7 +786,7 @@ exports.newUserBot = function newUserBot(bot, logger) {
     simulatorExecutorMessage.order.creator = ORDER_CREATOR.SimulationEngine
     simulatorExecutorMessage.order.owner = ORDER_OWNER.User
     simulatorExecutorMessage.order.exchange = global.EXCHANGE_NAME
-    simulatorExecutorMessage.order.market = global.MARKET.name
+    simulatorExecutorMessage.order.market = global.MARKET.assetA + '_' + global.MARKET.assetB
     simulatorExecutorMessage.order.marginEnabled = ORDER_MARGIN_ENABLED.False
     simulatorExecutorMessage.order.type = ORDER_TYPE.Limit
     simulatorExecutorMessage.order.status = ORDER_STATUS.Placed
