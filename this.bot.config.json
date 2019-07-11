@@ -73,7 +73,7 @@
                         "major": 1,
                         "minor": 0
                     },
-                    "product": "Trading-Simulation",
+                    "product": "Trading-Execution",
                     "dataSetVersion": "dataSet.V1",
                     "dataSet": "Multi-Period-Market"
                 },
@@ -84,7 +84,7 @@
                         "major": 1,
                         "minor": 0
                     },
-                    "product": "Trading-Simulation",
+                    "product": "Trading-Execution",
                     "dataSetVersion": "dataSet.V1",
                     "dataSet": "Multi-Period-Daily"
                 }
