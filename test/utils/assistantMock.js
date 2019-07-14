@@ -46,7 +46,7 @@ exports.newAssistantMock = function newAssistantMock() {
 
     function getDataDependencies() {
         let map = new Map()
-        let key = bot.devTeam + '-simulator-' + bot.codeName + '-Trading-Simulation-' + bot.dataSet + '-dataSet.V1'
+        let key = bot.devTeam + '-simulator-' + bot.codeName + '-Trading-Execution-' + bot.dataSet + '-dataSet.V1'
         let storage = {
             getTextFile: (pFolderPath, pFileName, callBackFunction) => {
                 if (fileNotFound) {

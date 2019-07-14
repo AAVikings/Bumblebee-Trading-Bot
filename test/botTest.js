@@ -7,6 +7,7 @@ var assistantMock = require("./utils/assistantMock")
 var { buildSimulatorEngineMessage } = require("./utils/buildSimulatorEngineMessage")
 var { buildSimulatorExecutorMessage } = require("./utils/buildSimulatorExecutorMessage")
 var { updateToManualAuthorized } = require("./utils/updateToManualAuthorized")
+var util = require('util')
 require('dotenv').config()
 const { orderMessage } = require("@superalgos/mqservice")
 const {
@@ -19,8 +20,8 @@ describe("SimulatorExecutor ", function () {
 
     var botInstance
     bot.processDatetime = new Date()
-    bot.timePeriodFileStorage = "01-hs"
-    bot.dataSet = "Multi-Period-Market"
+    bot.timePeriodFileStorage = "05-min"
+    bot.dataSet = "Multi-Period-Daily"
     bot.botCache = new Map()
     globals.setGlobals()
     var assistant = assistantMock.newAssistantMock()
@@ -51,6 +52,36 @@ describe("SimulatorExecutor ", function () {
         afterEach(() => {
             botInstance = undefined
             assistant = undefined
+        })
+        it("Indicator from file execution.", async function () {
+            this.timeout(9500000)
+            try {
+                var indicatorFile = require("./utils/indicatorFile.json")
+                assistant.setFileMessages(indicatorFile)
+                // bot.processDatetime = new Date(indicatorFile[0][0].valueOf())
+                bot.processDatetime = new Date()
+                bot.timePeriodFileStorage = "05-min"
+                bot.dataSet = "Multi-Period-Daily"
+                bot.processes[0].timePeriod = 300000
+
+                // while (bot.processDatetime.valueOf() <= indicatorFile[indicatorFile.length - 1][0]) {
+                    botInstance = simulatorExecutor.newUserBot(bot, logger)
+                    botInstance.initialize(assistant, undefined, (result) => { })
+                    botInstance.setAutopilot(true)
+                    await botInstance.executorLogic()
+                    bot.processDatetime = new Date(bot.processDatetime.valueOf() + 60000)
+                // }
+                var object = assistant.getExtraData()
+                for (const key in object) {
+                    if (object.hasOwnProperty(key)) {
+                        const element = object[key];
+                        console.log(JSON.stringify(element))
+                    }
+                }
+                assert.isOk('everything', 'everything is ok')
+            } catch (error) {
+                console.log('Indicator from file execution error: ' + error.message)
+            }
         })
         it("Indicator older than 10 mins. No previous order.", function (done) {
             this.timeout(95000) // The axios call to the cockpit module is taking time to resolve.
